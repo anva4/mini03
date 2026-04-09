@@ -164,6 +164,36 @@ export default function LegalPage() {
             </div>
           </div>
 
+          <div className="flex items-start gap-3 p-3 bg-secondary/30 rounded-xl">
+            <div className="w-10 h-10 bg-purple-500/15 rounded-xl flex items-center justify-center flex-shrink-0 border border-purple-500/20">
+              <span className="text-purple-400 font-bold text-xs">NP</span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-sm">NOWPayments</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Криптовалютные платежи, 300+ монет, автоконвертация</p>
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {["BTC", "ETH", "USDT", "LTC", "BNB", "SOL", "300+ монет"].map(m => (
+                  <span key={m} className="text-[10px] bg-purple-500/10 text-purple-400 px-1.5 py-0.5 rounded-md font-medium">{m}</span>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-3 p-3 bg-secondary/30 rounded-xl">
+            <div className="w-10 h-10 bg-cyan-500/15 rounded-xl flex items-center justify-center flex-shrink-0 border border-cyan-500/20">
+              <span className="text-cyan-400 font-bold text-xs">CP</span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-sm">CrystalPay</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Крипто и электронные кошельки, быстрые переводы</p>
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {["USDT", "BTC", "ETH", "LTC", "Payeer", "ЮMoney"].map(m => (
+                  <span key={m} className="text-[10px] bg-cyan-500/10 text-cyan-400 px-1.5 py-0.5 rounded-md font-medium">{m}</span>
+                ))}
+              </div>
+            </div>
+          </div>
+
           <div className="bg-secondary/20 rounded-xl p-3 text-xs text-muted-foreground">
             <p className="font-semibold text-foreground mb-1">🔒 Безопасность платежей</p>
             <p>Страницы оплаты работают по протоколу HTTPS/SSL. Реквизиты карт вводятся только на странице провайдера и не передаются платформе.</p>
