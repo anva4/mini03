@@ -176,7 +176,10 @@ async function migrate() {
         ADD COLUMN IF NOT EXISTS two_fa_enabled BOOLEAN NOT NULL DEFAULT false,
         ADD COLUMN IF NOT EXISTS two_fa_code TEXT,
         ADD COLUMN IF NOT EXISTS two_fa_expires BIGINT,
-        ADD COLUMN IF NOT EXISTS notification_settings JSONB NOT NULL DEFAULT '{}';
+        ADD COLUMN IF NOT EXISTS notification_settings JSONB NOT NULL DEFAULT '{}',
+        ADD COLUMN IF NOT EXISTS ban_reason TEXT,
+        ADD COLUMN IF NOT EXISTS ban_at BIGINT,
+        ADD COLUMN IF NOT EXISTS ban_until BIGINT;
     `);
 
     logger.info("Database migration completed");
