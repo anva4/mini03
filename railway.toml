@@ -4,7 +4,7 @@ installCommand = "pnpm install --no-frozen-lockfile"
 buildCommand = "pnpm -r --filter !@workspace/mockup-sandbox --if-present run build"
 
 [build.nixpacksPlan.phases.setup]
-nixPkgs = ["nodejs_20"]
+nixPkgs = ["nodejs_20", "nodePackages.pnpm"]
 
 [deploy]
 startCommand = "pnpm --filter @workspace/api-server start"
