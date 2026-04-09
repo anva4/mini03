@@ -16,6 +16,7 @@ export interface User {
   rating?: number;
   reviewCount?: number;
   isAdmin?: boolean;
+  isSuperAdmin?: boolean;
   isVerified?: boolean;
   isBanned?: boolean;
   banReason?: string | null;
@@ -36,6 +37,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isTelegramMiniApp: boolean;
   isTelegramLoading: boolean;
+  isUserLoading: boolean;
   setTelegramLoading: (v: boolean) => void;
 }
 
@@ -93,6 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isTelegramMiniApp] = useState(detectTelegramMiniApp);
   const [isTelegramLoading, setIsTelegramLoading] = useState(detectTelegramMiniApp);
   const refreshIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [isUserLoading, setIsUserLoading] = useState(!!localStorage.getItem("mm_token"));
 
   useEffect(() => {
     if (!isTelegramLoading) return;
@@ -142,6 +145,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         logout();
       }
     } catch {}
+    setIsUserLoading(false);
   }, [logout]);
 
   useEffect(() => {
@@ -165,6 +169,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAuthenticated: !!token,
       isTelegramMiniApp,
       isTelegramLoading,
+      isUserLoading,
       setTelegramLoading: setIsTelegramLoading,
     }}>
       {children}
