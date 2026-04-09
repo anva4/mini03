@@ -1,12 +1,10 @@
 [build]
 builder = "nixpacks"
 installCommand = "pnpm install --no-frozen-lockfile"
-# Мы заменяем билд на простую команду, которая ничего не делает
-buildCommand = "echo 'Skipping typecheck...'"
+buildCommand = "echo 'Skipping build...'"
 
 [deploy]
-# Пробуем запустить сервер напрямую. 
-# Судя по логам, он лежит в artifacts/api-server
-startCommand = "node artifacts/api-server/dist/index.mjs"
+# Запускаем напрямую через ts-node
+startCommand = "pnpm --filter api-server exec ts-node src/index.ts"
 healthcheckPath = ""
 restartPolicyType = "on_failure"
