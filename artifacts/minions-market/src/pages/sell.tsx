@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Search, Upload, ChevronLeft, CheckCircle2, ArrowLeftRight, Lock, Info, Eye, EyeOff, Loader2 } from "lucide-react";
+import { SwipeButton } from "@/components/ui/swipe-button";
 import { useLocation } from "wouter";
 import { useCreateProduct } from "@workspace/api-client-react";
 import { PLAYEROK_GAMES, PLAYEROK_MOBILE_GAMES, PLAYEROK_APPS } from "@/data/playerok-categories";
@@ -914,10 +915,7 @@ export default function SellPage() {
               </div>
               {error && <p className="text-red-400 text-sm text-center py-2">{error}</p>}
               <div className="pt-4 pb-6">
-                <button onClick={handleSubmit} disabled={isPending}
-                  className="w-full py-4 bg-[#1CB0F6] text-black font-semibold rounded-2xl text-sm hover:bg-[#1aa7ff] transition disabled:opacity-60 flex items-center justify-center gap-2">
-                  {isPending ? <><Loader2 className="w-4 h-4 animate-spin" /> Публикуется...</> : "Опубликовать"}
-                </button>
+                <SwipeButton onConfirm={handleSubmit} label="Опубликовать" disabled={isPending} loading={isPending} loadingLabel="Публикуется..." />
               </div>
             </motion.div>
           )}
