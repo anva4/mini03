@@ -20,12 +20,16 @@ export default function ProfilePage() {
   const isOwnProfile = !profileId || profileId === authUser?.id;
   const userId = isOwnProfile ? authUser?.id : profileId;
 
-  const { data: profileUser, isLoading } = useGetUser(userId || "", { query: { enabled: !!userId, queryKey: getGetUserQueryKey(userId || "") } });
-  const { data: me } = useGetMe({ query: { enabled: isOwnProfile && isAuthenticated, queryKey: getGetMeQueryKey() } });
-  const { data: products } = useGetUserProducts(userId || "", {}, { query: { enabled: !!userId, queryKey: getGetUserProductsQueryKey(userId || "") } });
-  const { data: reviews } = useGetUserReviews(userId || "", { query: { enabled: !!userId, queryKey: getGetUserReviewsQueryKey(userId || "") } });
+  // Для своего профиля только getMe, для чужого только getUser
+  const { data: me, isLoading: meLoading } = useGetMe({ query: { enabled: isOwnProfile && isAuthenticated, queryKey: getGetMeQueryKey() } });
+  const { data: profileUser, isLoading: userLoading } = useGetUser(userId || "", { query: { enabled: !isOwnProfile && !!userId, queryKey: getGetUserQueryKey(userId || "") } });
+  const isLoading = isOwnProfile ? meLoading : userLoading;
 
-  const profile = isOwnProfile && me ? me : profileUser;
+  const { data: products } = useGetUserProducts(userId || "", {}, { query: { enabled: !!userId, queryKey: getGetUserProductsQueryKey(userId || "") } });
+  // Отзывы грузим лениво — только когда открыт таб
+  const { data: reviews } = useGetUserReviews(userId || "", { query: { enabled: !!userId && tab === "reviews", queryKey: getGetUserReviewsQueryKey(userId || "") } });
+
+  const profile = isOwnProfile ? me : profileUser;
 
   if (!isAuthenticated && isOwnProfile) {
     return (
