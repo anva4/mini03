@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, LogOut, Globe, Upload, User, FileText } from "lucide-react";
 import { Link } from "wouter";
+import { SwipeButton } from "@/components/ui/swipe-button";
 
 async function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -154,9 +155,7 @@ export default function SettingsPage() {
           </div>
         </Link>
 
-        <Button variant="destructive" className="w-full" onClick={handleLogout} data-testid="button-logout">
-          <LogOut className="w-4 h-4 mr-2" /> {t("logout")}
-        </Button>
+        <SwipeButton onConfirm={handleLogout} label={t("logout")} />
       </div>
     </div>
   );
