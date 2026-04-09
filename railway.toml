@@ -1,10 +1,8 @@
 [build]
 builder = "nixpacks"
 installCommand = "pnpm install --no-frozen-lockfile"
-buildCommand = "echo 'Skipping build...'"
+buildCommand = "pnpm run build"
 
 [deploy]
-# Используем npx, чтобы точно найти ts-node внутри папки
-startCommand = "cd artifacts/api-server && npx ts-node src/index.ts"
+startCommand = "pnpm --filter @workspace/api-server start"
 healthcheckPath = ""
-restartPolicyType = "on_failure"
