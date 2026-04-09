@@ -1,6 +1,8 @@
 [build]
 builder = "nixpacks"
+installCommand = "pnpm install --no-frozen-lockfile"
+buildCommand = "pnpm run build"
 
 [deploy]
 startCommand = "node index.js"
-restartPolicyType = "on_failure"
+healthcheckPath = ""
