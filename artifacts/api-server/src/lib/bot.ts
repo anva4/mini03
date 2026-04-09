@@ -58,9 +58,79 @@ export async function handleBotUpdate(update: any) {
     const text = message.text.trim();
     const telegramUsername = (from?.username || "").toLowerCase().replace(/^@/, "");
 
-    if (text.startsWith("/start") || text.startsWith("/code")) {
+    if (text.startsWith("/start")) {
+      const param = text.split(" ")[1]?.toLowerCase().replace(/^@/, "") || "";
+      const appUrl = process.env.APP_URL || "https://mini03-mini3-4c95.up.railway.app";
+
+      // Если /start без параметра — показываем приветствие
+      if (!param && !telegramUsername) {
+        await sendMessage(chatId,
+          `🛍️ <b>Добро пожаловать в Minions Market!</b>\n\n` +
+          `Это безопасная P2P-площадка для покупки и продажи игровых товаров.\n\n` +
+          `📌 <b>Как зарегистрироваться:</b>\n\n` +
+          `<b>Способ 1 — Через Telegram (рекомендуем):</b>\n` +
+          `• Перейдите на сайт: <a href="${appUrl}">${appUrl}</a>\n` +
+          `• Нажмите <b>«Войти через Telegram»</b>\n` +
+          `• Подтверждение придёт прямо сюда — пароль не нужен!\n\n` +
+          `<b>Способ 2 — Классическая регистрация:</b>\n` +
+          `• Перейдите на сайт и нажмите <b>«Регистрация»</b>\n` +
+          `• Введите @username, придумайте пароль\n` +
+          `• Введите @${telegramUsername || "ваш_username"} и нажмите <b>«Получить код»</b>\n` +
+          `• Бот пришлёт вам код — введите его на сайте\n\n` +
+          `❓ Нужна помощь? Напишите /help`
+        );
+        return;
+      }
+
+      // /start с параметром или есть username — ищем код
+      const targetUsername = param || telegramUsername;
+      const now = Math.floor(Date.now() / 1000);
+      const [authCode] = await db
+        .select()
+        .from(authCodes)
+        .where(and(eq(authCodes.telegramUsername, targetUsername), gt(authCodes.expiresAt, now), isNull(authCodes.usedAt)))
+        .orderBy(desc(authCodes.createdAt))
+        .limit(1);
+
+      if (!authCode) {
+        // Нет кода — показываем приветствие с инструкцией
+        const firstName = from?.first_name ? `, <b>${from.first_name}</b>` : "";
+        await sendMessage(chatId,
+          `👋 Привет${firstName}!\n\n` +
+          `🛍️ <b>Minions Market</b> — площадка для покупки и продажи игровых товаров.\n\n` +
+          `📌 <b>Как зарегистрироваться:</b>\n\n` +
+          `<b>✨ Способ 1 — Через Telegram (без пароля):</b>\n` +
+          `• Зайдите на сайт: <a href="${appUrl}">${appUrl}</a>\n` +
+          `• Нажмите <b>«Войти через Telegram»</b>\n` +
+          `• Подтверждение придёт прямо в этот чат\n\n` +
+          `<b>📝 Способ 2 — По логину и паролю:</b>\n` +
+          `• Зайдите на сайт, нажмите <b>«Регистрация»</b>\n` +
+          `• Введите @${targetUsername} и придумайте пароль\n` +
+          `• Нажмите <b>«Получить код»</b> — бот пришлёт его сюда\n` +
+          `• Введите код на сайте и готово!\n\n` +
+          `💡 Для входа через Telegram пароль не нужен!\n\n` +
+          `❓ /help — список команд`
+        );
+        return;
+      }
+
+      await db.update(authCodes).set({ telegramId: String(from.id) }).where(eq(authCodes.id, authCode.id));
+
+      const minutesLeft = Math.ceil((authCode.expiresAt - now) / 60);
+      await sendMessage(chatId,
+        `✅ <b>Ваш код подтверждения:</b>\n\n` +
+        `<code>${authCode.code}</code>\n\n` +
+        `Введите его на сайте в поле «Код».\n` +
+        `⏱ Действует ещё <b>${minutesLeft} мин.</b>\n\n` +
+        `⚠️ Никому не сообщайте этот код.`
+      );
+      return;
+    }
+
+    if (text.startsWith("/code")) {
       const param = text.split(" ")[1]?.toLowerCase().replace(/^@/, "") || "";
       const targetUsername = param || telegramUsername;
+      const appUrl = process.env.APP_URL || "https://mini03-mini3-4c95.up.railway.app";
 
       if (!targetUsername) {
         await sendMessage(chatId, "❌ Не удалось определить пользователя.\n\nВернитесь на сайт и нажмите кнопку <b>«Получить код»</b>.");
@@ -76,10 +146,9 @@ export async function handleBotUpdate(update: any) {
         .limit(1);
 
       if (!authCode) {
-        const appUrl = process.env.APP_URL || "сайт";
         await sendMessage(chatId,
-          `❌ Код не найден или истёк.\n\n` +
-          `Вернитесь на <a href="${appUrl}">${appUrl}</a>, введите @${targetUsername} и нажмите «Получить код», затем снова откройте бота.`
+          `❌ <b>Код не найден или истёк.</b>\n\n` +
+          `Вернитесь на <a href="${appUrl}">сайт</a>, введите @${targetUsername} и нажмите «Получить код», затем снова напишите боту.`
         );
         return;
       }
@@ -88,9 +157,10 @@ export async function handleBotUpdate(update: any) {
 
       const minutesLeft = Math.ceil((authCode.expiresAt - now) / 60);
       await sendMessage(chatId,
-        `✅ Ваш код для регистрации на <b>Minions Market</b>:\n\n` +
-        `<b>${authCode.code}</b>\n\n` +
-        `Введите его на сайте в поле «Код». Действует ещё ${minutesLeft} мин.\n\n` +
+        `✅ <b>Ваш код подтверждения:</b>\n\n` +
+        `<code>${authCode.code}</code>\n\n` +
+        `Введите его на сайте в поле «Код».\n` +
+        `⏱ Действует ещё <b>${minutesLeft} мин.</b>\n\n` +
         `⚠️ Никому не сообщайте этот код.`
       );
       return;
@@ -109,21 +179,35 @@ export async function handleBotUpdate(update: any) {
       return;
     }
 
+    if (text.startsWith("/help")) {
+      const appUrl = process.env.APP_URL || "https://mini03-mini3-4c95.up.railway.app";
+      await sendMessage(chatId,
+        `📋 <b>Команды бота Minions Market:</b>\n\n` +
+        `/start — приветствие и инструкция\n` +
+        `/help — список команд\n` +
+        `/code — получить код подтверждения\n` +
+        `/2fa — получить код двухфакторной аутентификации\n\n` +
+        `🌐 <b>Сайт:</b> <a href="${appUrl}">${appUrl}</a>\n\n` +
+        `💡 <b>Совет:</b> Войти через Telegram можно без пароля — просто нажмите «Войти через Telegram» на сайте.`
+      );
+      return;
+    }
+
     // Admin commands — только для владельца
     if (text.startsWith("/")) {
       await handleAdminCommand(chatId, text, String(from.id));
       return;
     }
 
-    // Default welcome
-    const appUrl = process.env.APP_URL || "сайт";
+    // Default — на любое сообщение
+    const appUrl = process.env.APP_URL || "https://mini03-mini3-4c95.up.railway.app";
+    const firstName = from?.first_name ? `, <b>${from.first_name}</b>` : "";
     await sendMessage(chatId,
-      `👋 Привет! Я бот <b>Minions Market</b>.\n\n` +
-      `🔑 Чтобы получить код регистрации:\n` +
-      `1. Перейдите на <a href="${appUrl}">${appUrl}</a>\n` +
-      `2. Введите ваш Telegram @username\n` +
-      `3. Нажмите кнопку <b>«Получить код»</b>\n\n` +
-      `📋 Команды: /help`
+      `👋 Привет${firstName}! Я бот <b>Minions Market</b>.\n\n` +
+      `🛍️ Безопасная площадка для покупки и продажи игровых товаров.\n\n` +
+      `👉 <a href="${appUrl}">Перейти на сайт</a>\n\n` +
+      `📋 /help — список команд\n` +
+      `/start — полная инструкция по регистрации`
     );
   } catch (err) {
     logger.error(err, "Bot update error");
