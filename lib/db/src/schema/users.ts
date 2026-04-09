@@ -22,6 +22,7 @@ export const users = pgTable("users", {
   rating: numeric("rating", { precision: 3, scale: 1 }).notNull().default("5.0"),
   reviewCount: integer("review_count").notNull().default(0),
   isAdmin: boolean("is_admin").notNull().default(false),
+  isSuperAdmin: boolean("is_super_admin").notNull().default(false),
   isVerified: boolean("is_verified").notNull().default(false),
   isBanned: boolean("is_banned").notNull().default(false),
   banReason: text("ban_reason"),
