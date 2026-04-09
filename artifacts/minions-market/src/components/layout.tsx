@@ -6,6 +6,7 @@ import { useLang } from "@/lib/i18n";
 import { IconWrapper } from "@/components/ui/icon-wrapper";
 import { BannedScreen } from "@/components/banned-screen";
 import type { ReactNode } from "react";
+import { MinionBuddy } from "@/components/minion-buddy";
 
 const PAGE_TITLE_MAP: Record<string, string> = {
   "/": "home",
@@ -196,6 +197,9 @@ export function Layout({ children }: { children: ReactNode }) {
           </div>
         </nav>
       )}
+
+      {/* Animated minion helper — always on top */}
+      {!hideNav && <MinionBuddy />}
     </div>
   );
 }
