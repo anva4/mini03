@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useLocation, Link } from "wouter";
-import { Home, Search, PlusCircle, MessageCircle, User, Menu, X, Radio, Settings, Shield } from "lucide-react";
+import { Home, Search, PlusCircle, MessageCircle, User, Menu, X, Radio, Settings, Shield, FileText } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useLang } from "@/lib/i18n";
 import { IconWrapper } from "@/components/ui/icon-wrapper";
@@ -85,6 +85,7 @@ export function Layout({ children }: { children: ReactNode }) {
     { path: "/radio", icon: Radio, label: t("radio") },
     { path: "/profile", icon: User, label: t("profile") },
     { path: "/settings", icon: Settings, label: t("settings") },
+    { path: "/legal", icon: FileText, label: t("legal") },
     ...(user?.isAdmin ? [{ path: "/admin", icon: Shield, label: t("admin"), exact: false }] : []),
   ];
 
