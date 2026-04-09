@@ -61,7 +61,7 @@ function statusColor(s: string) {
 
 export default function AdminPage() {
   const { t } = useLang();
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, isUserLoading } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -92,8 +92,20 @@ export default function AdminPage() {
   const [banHours, setBanHours] = useState("");
 
   useEffect(() => {
+    // Ждём загрузки актуальных данных пользователя с сервера,
+    // чтобы не кикнуть нового админа у которого в localStorage ещё нет isAdmin=true
+    if (isUserLoading) return;
     if (!isAuthenticated || !user?.isAdmin) setLocation("/");
-  }, [isAuthenticated, user?.isAdmin]);
+  }, [isAuthenticated, user?.isAdmin, isUserLoading]);
+
+  // Пока данные грузятся — показываем спиннер, не редиректим
+  if (isUserLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   if (!isAuthenticated || !user?.isAdmin) return null;
 
@@ -376,7 +388,7 @@ export default function AdminPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="font-semibold text-sm truncate">{u.username}</span>
-                      {u.isAdmin && <Crown className="w-3 h-3 text-yellow-400 shrink-0" />}
+                      {u.isSuperAdmin && <Crown className="w-3 h-3 text-amber-300 shrink-0" title="Главный администратор" />}{u.isAdmin && !u.isSuperAdmin && <Crown className="w-3 h-3 text-yellow-400 shrink-0" />}
                       {u.isVerified && <CheckCircle className="w-3 h-3 text-blue-400 shrink-0" />}
                       {u.isBanned && <span className={`text-[10px] px-1.5 py-0.5 rounded border ${statusColor("banned")}`}>Заблок.</span>}
                     </div>
@@ -396,9 +408,24 @@ export default function AdminPage() {
                   <Button size="sm" variant="secondary" className={`h-7 text-[11px] gap-1 ${u.isBanned ? "text-green-400" : "text-red-400"}`} onClick={() => handleBan(u.id, !u.isBanned, u.username || u.id)} data-testid={`ban-${u.id}`}>
                     {u.isBanned ? <><CheckCircle className="w-3 h-3" /> Разблокировать</> : <><Ban className="w-3 h-3" /> Заблокировать</>}
                   </Button>
-                  <Button size="sm" variant="secondary" className={`h-7 text-[11px] gap-1 ${u.isAdmin ? "text-orange-400" : "text-yellow-400"}`} onClick={() => handleSetRole(u.id, !u.isAdmin)}>
-                    <Crown className="w-3 h-3" /> {u.isAdmin ? "Снять админа" : "Дать права"}
-                  </Button>
+                  {/* Кнопка роли — скрыта если цель суперадмин, или если текущий не суперадмин и пытается трогать другого админа */}
+                  {user?.isSuperAdmin ? (
+                    u.isSuperAdmin ? (
+                      <span className="h-7 text-[11px] px-2 flex items-center gap-1 text-yellow-400 opacity-60 select-none">
+                        <Crown className="w-3 h-3" /> Гл. Админ
+                      </span>
+                    ) : (
+                      <Button size="sm" variant="secondary" className={`h-7 text-[11px] gap-1 ${u.isAdmin ? "text-orange-400" : "text-yellow-400"}`} onClick={() => handleSetRole(u.id, !u.isAdmin)}>
+                        <Crown className="w-3 h-3" /> {u.isAdmin ? "Снять админа" : "Дать права"}
+                      </Button>
+                    )
+                  ) : (
+                    !u.isSuperAdmin && !u.isAdmin && (
+                      <Button size="sm" variant="secondary" className="h-7 text-[11px] gap-1 text-yellow-400" onClick={() => handleSetRole(u.id, true)}>
+                        <Crown className="w-3 h-3" /> Дать права
+                      </Button>
+                    )
+                  )}
                   <Button size="sm" variant="secondary" className="h-7 text-[11px] gap-1" onClick={() => { setShowBalanceModal(u.id); setBalanceAmount(""); setBalanceDesc(""); }}>
                     <DollarSign className="w-3 h-3" /> Баланс
                   </Button>
