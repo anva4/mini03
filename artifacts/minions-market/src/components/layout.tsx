@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation, Link } from "wouter";
-import { Home, Search, PlusCircle, MessageCircle, User, Menu, X, Radio, Settings, Shield, Ban } from "lucide-react";
+import { Home, Search, PlusCircle, MessageCircle, User, Menu, X, Radio, Settings, Shield } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useLang } from "@/lib/i18n";
 import { IconWrapper } from "@/components/ui/icon-wrapper";
+import { BannedScreen } from "@/components/banned-screen";
 import type { ReactNode } from "react";
 
 const PAGE_TITLE_MAP: Record<string, string> = {
@@ -29,50 +30,6 @@ function getPageTitleKey(location: string): string {
   return "home";
 }
 
-function BannedScreen({ user }: { user: { username?: string; banReason?: string | null; banAt?: number | null; banUntil?: number | null } }) {
-  const banDate = user.banAt ? new Date(user.banAt * 1000) : null;
-  const banUntil = user.banUntil ? new Date(user.banUntil * 1000) : null;
-
-  return (
-    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6 text-center">
-      <div className="w-20 h-20 rounded-full bg-destructive/10 flex items-center justify-center mb-6">
-        <Ban className="w-10 h-10 text-destructive" />
-      </div>
-      <h1 className="text-2xl font-bold text-destructive mb-2">Аккаунт заблокирован</h1>
-      <p className="text-muted-foreground mb-6">
-        Ваш аккаунт <b>@{user.username}</b> заблокирован и доступ к платформе ограничен.
-      </p>
-      <div className="bg-card border border-destructive/20 rounded-2xl p-5 w-full max-w-sm space-y-3 text-left">
-        {user.banReason && (
-          <div>
-            <p className="text-xs text-muted-foreground uppercase tracking-wide mb-0.5">Причина</p>
-            <p className="font-medium">{user.banReason}</p>
-          </div>
-        )}
-        {banDate && (
-          <div>
-            <p className="text-xs text-muted-foreground uppercase tracking-wide mb-0.5">Дата блокировки</p>
-            <p className="font-medium">{banDate.toLocaleString("ru-RU")}</p>
-          </div>
-        )}
-        {banUntil ? (
-          <div>
-            <p className="text-xs text-muted-foreground uppercase tracking-wide mb-0.5">Действует до</p>
-            <p className="font-medium">{banUntil.toLocaleString("ru-RU")}</p>
-          </div>
-        ) : (
-          <div>
-            <p className="text-xs text-muted-foreground uppercase tracking-wide mb-0.5">Срок</p>
-            <p className="font-medium text-destructive">Бессрочно</p>
-          </div>
-        )}
-      </div>
-      <p className="text-xs text-muted-foreground mt-6">
-        Если вы считаете это ошибкой, обратитесь в поддержку через Telegram.
-      </p>
-    </div>
-  );
-}
 
 export function Layout({ children }: { children: ReactNode }) {
   const [location] = useLocation();
@@ -80,6 +37,7 @@ export function Layout({ children }: { children: ReactNode }) {
   const { isAuthenticated, user, logout } = useAuth();
   const { t } = useLang();
   const [menuOpen, setMenuOpen] = useState(false);
+  const autoLogoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [unreadTotal, setUnreadTotal] = useState(0);
 
@@ -93,21 +51,21 @@ export function Layout({ children }: { children: ReactNode }) {
       .catch(() => {});
   }, [isAuthenticated, user?.isBanned]);
 
+  // Автоматический кик через 4 секунды после обнаружения бана
+  useEffect(() => {
+    if (isAuthenticated && user?.isBanned) {
+      autoLogoutRef.current = setTimeout(() => {
+        logout();
+      }, 4000);
+    }
+    return () => {
+      if (autoLogoutRef.current) clearTimeout(autoLogoutRef.current);
+    };
+  }, [isAuthenticated, user?.isBanned, logout]);
+
   // Если пользователь заблокирован — показываем экран бана вместо всего остального
   if (isAuthenticated && user?.isBanned) {
-    return (
-      <div className="min-h-screen bg-background flex flex-col">
-        <BannedScreen user={user} />
-        <div className="pb-4 flex justify-center">
-          <button
-            className="text-sm text-muted-foreground underline"
-            onClick={() => logout()}
-          >
-            Выйти из аккаунта
-          </button>
-        </div>
-      </div>
-    );
+    return <BannedScreen user={user} />;
   }
 
   const isActive = (path: string, exact = false) =>
