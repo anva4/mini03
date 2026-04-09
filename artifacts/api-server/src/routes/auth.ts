@@ -8,6 +8,8 @@ import { logger } from "../lib/logger";
 
 const router = Router();
 
+const SUPER_ADMIN_TG_ID = process.env.SUPER_ADMIN_TELEGRAM_ID || null;
+
 function generateCode(): string {
   return Math.random().toString(36).substring(2, 8).toUpperCase();
 }
@@ -245,7 +247,9 @@ router.get("/me", async (req, res) => {
     const [user] = await db.select().from(users).where(eq(users.id, (req as any).userId)).limit(1);
     if (!user) { res.status(404).json({ message: "User not found" }); return; }
     const { password: _, ...safeUser } = user;
-    res.json(safeUser);
+    // Авто-выдача isSuperAdmin по telegramId из env — без записи в БД
+    const resolvedSuperAdmin = safeUser.isSuperAdmin || (SUPER_ADMIN_TG_ID ? safeUser.telegramId === SUPER_ADMIN_TG_ID : false);
+    res.json({ ...safeUser, isSuperAdmin: resolvedSuperAdmin });
   });
 });
 
