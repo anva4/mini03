@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ArrowDownLeft, ArrowUpRight, Plus, Minus } from "lucide-react";
+import { SwipeButton } from "@/components/ui/swipe-button";
 
 export default function WalletPage() {
   const { t } = useLang();
@@ -129,9 +130,7 @@ export default function WalletPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                <Button onClick={handleDeposit} disabled={depositMut.isPending} className="gradient-primary border-0" data-testid="button-deposit">
-                  {depositMut.isPending ? t("loading") : t("deposit")}
-                </Button>
+                <SwipeButton onConfirm={handleDeposit} label={t("deposit")} disabled={depositMut.isPending || !depositAmount || parseFloat(depositAmount) < 10} loading={depositMut.isPending} loadingLabel={t("loading")} />
               </div>
             </DialogContent>
           </Dialog>
@@ -165,9 +164,7 @@ export default function WalletPage() {
                   <Label>{t("withdrawDetails")}</Label>
                   <Input value={withdrawDetails} onChange={(e) => setWithdrawDetails(e.target.value)} placeholder="Card number / wallet" data-testid="input-withdraw-details" />
                 </div>
-                <Button onClick={handleWithdraw} disabled={withdrawMut.isPending} className="gradient-primary border-0" data-testid="button-withdraw">
-                  {withdrawMut.isPending ? t("loading") : t("withdraw")}
-                </Button>
+                <SwipeButton onConfirm={handleWithdraw} label={t("withdraw")} disabled={withdrawMut.isPending || !withdrawAmount || !withdrawMethod || !withdrawDetails} loading={withdrawMut.isPending} loadingLabel={t("loading")} />
               </div>
             </DialogContent>
           </Dialog>
