@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, LogOut, Globe, Upload, User, FileText } from "lucide-react";
+import { ArrowLeft, LogOut, Globe, Upload, User, FileText, EyeOff, Eye } from "lucide-react";
 import { Link } from "wouter";
 import { SwipeButton } from "@/components/ui/swipe-button";
 
@@ -36,6 +36,7 @@ export default function SettingsPage() {
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(user?.avatar || null);
   const [saving, setSaving] = useState(false);
+  const [minionHidden, setMinionHidden] = useState(() => localStorage.getItem("minion_hidden") === "1");
 
   const updateProfile = useUpdateProfile();
 
@@ -89,6 +90,13 @@ export default function SettingsPage() {
     logout();
     setLocation("/");
   };
+
+  function toggleMinion() {
+    const next = !minionHidden;
+    setMinionHidden(next);
+    localStorage.setItem("minion_hidden", next ? "1" : "0");
+    window.dispatchEvent(new Event("minion-visibility-change"));
+  }
 
   return (
     <div className="flex flex-col pb-4">
@@ -147,6 +155,25 @@ export default function SettingsPage() {
             <Button variant={lang === "en" ? "default" : "secondary"} size="sm" onClick={() => setLang("en")} data-testid="button-lang-en">{t("en")}</Button>
           </div>
         </div>
+
+        {/* ── Minion toggle ── */}
+        <button
+          type="button"
+          onClick={toggleMinion}
+          className="w-full bg-card rounded-xl border border-border/30 p-4 flex items-center justify-between hover:border-primary/30 transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <span className="text-xl">🍌</span>
+            <div className="text-left">
+              <p className="text-sm font-semibold">{minionHidden ? "Показать миниона" : "Скрыть миниона"}</p>
+              <p className="text-xs text-muted-foreground">{minionHidden ? "Боб скучает по тебе..." : "Боб бегает по экрану"}</p>
+            </div>
+          </div>
+          <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${minionHidden ? "bg-muted text-muted-foreground" : "bg-yellow-400/20 text-yellow-600"}`}>
+            {minionHidden ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+            {minionHidden ? "Показать" : "Скрыть"}
+          </div>
+        </button>
 
         <Link href="/legal">
           <div className="bg-card rounded-xl border border-border/30 p-4 flex items-center gap-3 cursor-pointer hover:border-primary/30 transition-colors">
