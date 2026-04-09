@@ -4,7 +4,7 @@ installCommand = "pnpm install --no-frozen-lockfile"
 buildCommand = "echo 'Skipping build...'"
 
 [deploy]
-# Запускаем напрямую через ts-node
-startCommand = "pnpm --filter api-server exec ts-node src/index.ts"
+# Используем npx, чтобы точно найти ts-node внутри папки
+startCommand = "cd artifacts/api-server && npx ts-node src/index.ts"
 healthcheckPath = ""
 restartPolicyType = "on_failure"
