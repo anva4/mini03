@@ -1,6 +1,9 @@
 import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
 import type { Request, Response, NextFunction } from "express";
+import { db } from "@workspace/db";
+import { users } from "@workspace/db/schema";
+import { eq } from "drizzle-orm";
 
 const JWT_SECRET = process.env.JWT_SECRET || process.env.SESSION_SECRET || "";
 
@@ -40,7 +43,7 @@ export async function comparePassword(password: string, hash: string): Promise<b
   return bcrypt.compare(password, hash);
 }
 
-export function authMiddleware(req: Request, res: Response, next: NextFunction): void {
+export async function authMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
   const header = req.headers.authorization;
   if (!header || !header.startsWith("Bearer ")) {
     res.status(401).json({ message: "Unauthorized" });
@@ -51,6 +54,19 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
   if (!payload) {
     res.status(401).json({ message: "Invalid token" });
     return;
+  }
+  // Проверяем бан при каждом запросе
+  const [user] = await db.select({ isBanned: users.isBanned, banUntil: users.banUntil }).from(users).where(eq(users.id, payload.userId)).limit(1);
+  if (!user) {
+    res.status(401).json({ message: "User not found" });
+    return;
+  }
+  if (user.isBanned) {
+    const now = Math.floor(Date.now() / 1000);
+    if (!user.banUntil || user.banUntil > now) {
+      res.status(403).json({ message: "Account banned" });
+      return;
+    }
   }
   (req as any).userId = payload.userId;
   (req as any).username = payload.username;
