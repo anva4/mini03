@@ -496,18 +496,20 @@ router.post("/withdrawals/:id/process", async (req, res) => {
 
     if (action === "approve") {
       await db.update(transactions).set({ status: "completed", description: newDesc }).where(eq(transactions.id, tx.id));
-      const [user] = await db.select().from(users).where(eq(users.id, tx.userId)).limit(1);
+      // FIX: атомарное обновление totalWithdrawn через SQL — нет race condition
       await db.update(users).set({
-        totalWithdrawn: (parseFloat(user.totalWithdrawn) + parseFloat(tx.amount)).toFixed(2),
+        totalWithdrawn: sql`total_withdrawn + ${tx.amount}::numeric`,
       }).where(eq(users.id, tx.userId));
+      const [user] = await db.select({ telegramId: users.telegramId }).from(users).where(eq(users.id, tx.userId)).limit(1);
       await notifyUser(user?.telegramId, notify.withdrawApproved(tx.amount));
     } else {
       // Отклонение: возвращаем средства на баланс
       await db.update(transactions).set({ status: "cancelled", description: newDesc }).where(eq(transactions.id, tx.id));
-      const [user] = await db.select().from(users).where(eq(users.id, tx.userId)).limit(1);
+      // FIX: атомарное возвращение баланса через SQL — нет race condition
       await db.update(users).set({
-        balance: (parseFloat(user.balance) + parseFloat(tx.amount)).toFixed(2),
+        balance: sql`balance + ${tx.amount}::numeric`,
       }).where(eq(users.id, tx.userId));
+      const [user] = await db.select({ telegramId: users.telegramId }).from(users).where(eq(users.id, tx.userId)).limit(1);
       await notifyUser(user?.telegramId, notify.withdrawRejected(tx.amount, note));
     }
 
