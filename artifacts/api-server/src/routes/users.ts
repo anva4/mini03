@@ -10,12 +10,12 @@ const router = Router();
 router.get("/me", authMiddleware, async (req, res) => {
   try {
     const [user] = await db.select().from(users).where(eq(users.id, (req as any).userId)).limit(1);
-    if (!user) { res.status(404).json({ message: "User not found" }); return; }
+    if (!user) { res.status(404).json({ message: "Пользователь не найден" }); return; }
     const { password: _, ...safeUser } = user;
     res.json(safeUser);
   } catch (err) {
-    logger.error(err, "Get me error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка загрузки профиля");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -31,20 +31,20 @@ router.put("/me", authMiddleware, async (req, res) => {
     const { password: _, ...safeUser } = user;
     res.json(safeUser);
   } catch (err) {
-    logger.error(err, "Update profile error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка обновления профиля");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
 router.get("/:id", async (req, res) => {
   try {
     const [user] = await db.select().from(users).where(eq(users.id, req.params.id)).limit(1);
-    if (!user) { res.status(404).json({ message: "User not found" }); return; }
+    if (!user) { res.status(404).json({ message: "Пользователь не найден" }); return; }
     const { password: _, ...safeUser } = user;
     res.json(safeUser);
   } catch (err) {
-    logger.error(err, "Get user error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка загрузки пользователя");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -56,8 +56,8 @@ router.get("/:id/products", async (req, res) => {
       .limit(50);
     res.json({ products: prods, total: prods.length });
   } catch (err) {
-    logger.error(err, "Get user products error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка загрузки товаров пользователя");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -83,8 +83,8 @@ router.get("/:id/reviews", async (req, res) => {
       .limit(50);
     res.json(revs);
   } catch (err) {
-    logger.error(err, "Get user reviews error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка загрузки отзывов пользователя");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
