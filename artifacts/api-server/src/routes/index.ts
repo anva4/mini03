@@ -71,7 +71,7 @@ router.get("/favorites", authMiddleware, async (req, res) => {
 
     res.json(result);
   } catch (err) {
-    res.status(500).json({ message: "Internal server error" });
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -87,7 +87,7 @@ router.put("/profile", authMiddleware, async (req, res) => {
     const { password: _, ...safeUser } = user;
     res.json(safeUser);
   } catch (err) {
-    res.status(500).json({ message: "Internal server error" });
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
