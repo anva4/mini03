@@ -40,13 +40,13 @@ router.post("/register", async (req, res) => {
   try {
     const { username, password, code, telegramUsername } = req.body;
     if (!username || !password || !code) {
-      res.status(400).json({ message: "Missing required fields" });
+      res.status(400).json({ message: "Не заполнены обязательные поля" });
       return;
     }
 
     const existing = await db.select().from(users).where(eq(users.username, username)).limit(1);
     if (existing.length > 0) {
-      res.status(400).json({ message: "Username taken" });
+      res.status(400).json({ message: "Это имя пользователя уже занято" });
       return;
     }
 
@@ -61,7 +61,7 @@ router.post("/register", async (req, res) => {
       .limit(1);
 
     if (validCode.length === 0) {
-      res.status(400).json({ message: "Invalid or expired code" });
+      res.status(400).json({ message: "Неверный или просроченный код" });
       return;
     }
 
@@ -83,8 +83,8 @@ router.post("/register", async (req, res) => {
 
     res.json({ token, user: safeUser });
   } catch (err) {
-    logger.error(err, "Register error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка регистрации");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -92,31 +92,31 @@ router.post("/login", async (req, res) => {
   try {
     const { username, password } = req.body;
     if (!username || !password) {
-      res.status(400).json({ message: "Missing credentials" });
+      res.status(400).json({ message: "Введите имя пользователя и пароль" });
       return;
     }
 
     // FIX: rate limit по username (защита от брутфорса)
     const rateLimitKey = `login:${username.toLowerCase()}`;
     if (!checkLoginRateLimit(rateLimitKey)) {
-      res.status(429).json({ message: "Too many login attempts. Please try again in 15 minutes." });
+      res.status(429).json({ message: "Слишком много попыток входа. Попробуйте через 15 минут." });
       return;
     }
 
     const [user] = await db.select().from(users).where(eq(users.username, username)).limit(1);
     if (!user || !user.password) {
-      res.status(401).json({ message: "Invalid credentials" });
+      res.status(401).json({ message: "Неверное имя пользователя или пароль" });
       return;
     }
 
     if (user.isBanned) {
-      res.status(403).json({ message: "Account banned" });
+      res.status(403).json({ message: "Ваш аккаунт заблокирован" });
       return;
     }
 
     const valid = await comparePassword(password, user.password);
     if (!valid) {
-      res.status(401).json({ message: "Invalid credentials" });
+      res.status(401).json({ message: "Неверное имя пользователя или пароль" });
       return;
     }
 
@@ -130,8 +130,8 @@ router.post("/login", async (req, res) => {
 
     res.json({ token, user: safeUser });
   } catch (err) {
-    logger.error(err, "Login error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка входа");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -139,13 +139,13 @@ router.post("/telegram", async (req, res) => {
   try {
     const { initData } = req.body;
     if (!initData) {
-      res.status(400).json({ message: "Missing initData" });
+      res.status(400).json({ message: "Отсутствуют данные Telegram" });
       return;
     }
 
     const { valid, user: tgUser } = verifyTelegramWebAppData(initData);
     if (!valid || !tgUser) {
-      res.status(401).json({ message: "Invalid Telegram data" });
+      res.status(401).json({ message: "Неверные данные Telegram" });
       return;
     }
 
@@ -172,8 +172,8 @@ router.post("/telegram", async (req, res) => {
 
     res.json({ token, user: safeUser });
   } catch (err) {
-    logger.error(err, "Telegram auth error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка авторизации через Telegram");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -181,7 +181,7 @@ router.post("/request-code", async (req, res) => {
   try {
     const { telegramUsername } = req.body;
     if (!telegramUsername) {
-      res.status(400).json({ message: "Missing telegram username" });
+      res.status(400).json({ message: "Укажите имя пользователя Telegram" });
       return;
     }
 
@@ -197,7 +197,7 @@ router.post("/request-code", async (req, res) => {
       .limit(1);
 
     if (recentCode.length > 0) {
-      res.status(429).json({ message: "Code already sent. Please wait 60 seconds before requesting again." });
+      res.status(429).json({ message: "Код уже отправлен. Подождите 60 секунд перед повторным запросом." });
       return;
     }
 
@@ -236,8 +236,8 @@ router.post("/request-code", async (req, res) => {
       directMessageSent: messageSent,
     });
   } catch (err) {
-    logger.error(err, "Request code error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка запроса кода");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -245,7 +245,7 @@ router.get("/me", async (req, res) => {
   const { authMiddleware } = await import("../lib/auth");
   authMiddleware(req, res, async () => {
     const [user] = await db.select().from(users).where(eq(users.id, (req as any).userId)).limit(1);
-    if (!user) { res.status(404).json({ message: "User not found" }); return; }
+    if (!user) { res.status(404).json({ message: "Пользователь не найден" }); return; }
     const { password: _, ...safeUser } = user;
     // Авто-выдача isSuperAdmin по telegramId из env — без записи в БД
     const resolvedSuperAdmin = safeUser.isSuperAdmin || (SUPER_ADMIN_TG_ID ? safeUser.telegramId === SUPER_ADMIN_TG_ID : false);
