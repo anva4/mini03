@@ -13,9 +13,9 @@ router.post("/2fa/enable", authMiddleware, async (req, res) => {
   try {
     const userId = (req as any).userId;
     await db.update(users).set({ twoFAEnabled: true }).where(eq(users.id, userId));
-    res.json({ message: "2FA enabled. Send /2fa to bot for code" });
+    res.json({ message: "Двухфакторная аутентификация включена. Отправьте /2fa боту для получения кода." });
   } catch (err) {
-    logger.error(err, "Enable 2FA error");
+    logger.error(err, "Ошибка включения 2FA");
     res.status(500).json({ message: "Error" });
   }
 });
@@ -28,14 +28,14 @@ router.post("/2fa/verify", authMiddleware, async (req, res) => {
     
     const now = Math.floor(Date.now() / 1000);
     if (!user?.twoFACode || user.twoFACode !== code || !user.twoFAExpires || user.twoFAExpires < now) {
-      res.status(400).json({ message: "Invalid or expired code" });
+      res.status(400).json({ message: "Неверный или просроченный код" });
       return;
     }
     
     await db.update(users).set({ twoFACode: null, twoFAExpires: null }).where(eq(users.id, userId));
-    res.json({ message: "2FA verified" });
+    res.json({ message: "Двухфакторная аутентификация пройдена" });
   } catch (err) {
-    logger.error(err, "Verify 2FA error");
+    logger.error(err, "Ошибка верификации 2FA");
     res.status(500).json({ message: "Error" });
   }
 });
@@ -74,7 +74,7 @@ router.post("/ratings", authMiddleware, async (req, res) => {
     
     res.json(newRating);
   } catch (err) {
-    logger.error(err, "Create rating error");
+    logger.error(err, "Ошибка создания оценки");
     res.status(500).json({ message: "Error" });
   }
 });
@@ -102,7 +102,7 @@ router.get("/ratings/:sellerId", async (req, res) => {
     
     res.json(ratingsList);
   } catch (err) {
-    logger.error(err, "Get ratings error");
+    logger.error(err, "Ошибка загрузки оценок");
     res.status(500).json({ message: "Error" });
   }
 });
@@ -120,7 +120,7 @@ router.get("/referral/info", authMiddleware, async (req, res) => {
       refLink: `${process.env.APP_URL}?ref=${user?.refCode}`,
     });
   } catch (err) {
-    logger.error(err, "Get referral info error");
+    logger.error(err, "Ошибка загрузки реферальной информации");
     res.status(500).json({ message: "Error" });
   }
 });
@@ -144,7 +144,7 @@ router.get("/referral/list", authMiddleware, async (req, res) => {
     
     res.json(refs);
   } catch (err) {
-    logger.error(err, "Get referrals error");
+    logger.error(err, "Ошибка загрузки рефералов");
     res.status(500).json({ message: "Error" });
   }
 });
@@ -165,7 +165,7 @@ router.post("/search/save", authMiddleware, async (req, res) => {
     
     res.json(search);
   } catch (err) {
-    logger.error(err, "Save search error");
+    logger.error(err, "Ошибка сохранения поиска");
     res.status(500).json({ message: "Error" });
   }
 });
@@ -180,7 +180,7 @@ router.get("/search/saved", authMiddleware, async (req, res) => {
     
     res.json(searches);
   } catch (err) {
-    logger.error(err, "Get saved searches error");
+    logger.error(err, "Ошибка загрузки сохранённых поисков");
     res.status(500).json({ message: "Error" });
   }
 });
@@ -211,9 +211,9 @@ router.post("/lottery/enter", authMiddleware, async (req, res) => {
       entryReason: reason || "trade",
     }).returning();
     
-    res.json({ message: "Entry added", entryId: entry.id });
+    res.json({ message: "Вы участвуете в розыгрыше", entryId: entry.id });
   } catch (err) {
-    logger.error(err, "Lottery enter error");
+    logger.error(err, "Ошибка участия в розыгрыше");
     res.status(500).json({ message: "Error" });
   }
 });
@@ -224,7 +224,7 @@ router.get("/lottery/current", async (req, res) => {
     const [currentLottery] = await db.select().from(lottery).where(eq(lottery.weekNumber, weekNumber)).limit(1);
     
     if (!currentLottery) {
-      res.json({ message: "No active lottery" });
+      res.json({ message: "Активных розыгрышей нет" });
       return;
     }
     
@@ -237,7 +237,7 @@ router.get("/lottery/current", async (req, res) => {
       participantCount: count,
     });
   } catch (err) {
-    logger.error(err, "Get lottery error");
+    logger.error(err, "Ошибка загрузки розыгрыша");
     res.status(500).json({ message: "Error" });
   }
 });
@@ -257,7 +257,7 @@ router.post("/track/price", authMiddleware, async (req, res) => {
     
     res.json(track);
   } catch (err) {
-    logger.error(err, "Track price error");
+    logger.error(err, "Ошибка отслеживания цены");
     res.status(500).json({ message: "Error" });
   }
 });
@@ -273,7 +273,7 @@ router.get("/notifications", authMiddleware, async (req, res) => {
     
     res.json(notifs);
   } catch (err) {
-    logger.error(err, "Get notifications error");
+    logger.error(err, "Ошибка загрузки уведомлений");
     res.status(500).json({ message: "Error" });
   }
 });
@@ -286,9 +286,9 @@ router.post("/notifications/:id/read", authMiddleware, async (req, res) => {
       return;
     }
     await db.update(notifications).set({ isRead: true }).where(eq(notifications.id, notifId));
-    res.json({ message: "Marked as read" });
+    res.json({ message: "Отмечено как прочитанное" });
   } catch (err) {
-    logger.error(err, "Mark notification read error");
+    logger.error(err, "Ошибка отметки уведомления");
     res.status(500).json({ message: "Error" });
   }
 });
