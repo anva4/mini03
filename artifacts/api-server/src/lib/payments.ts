@@ -13,9 +13,10 @@ export interface PayoutResult {
 // Маппинг методов вывода на методы Rukassa (way)
 // Актуальные значения: CARD, SBP, QIWI, YOOMONEY
 const RUKASSA_PAYOUT_METHODS: Record<string, string> = {
-  card: "CARD",
-  sbp:  "SBP",
-  qiwi: "QIWI",
+  card:   "CARD",
+  sbp:    "SBP",
+  qiwi:   "QIWI",
+  crypto: "USDT",
 };
 
 /**
@@ -162,7 +163,7 @@ export async function createCrystalPayPayout(
   }
 }
 
-export async function createRukassaPayment(amount: number, orderId: string, description: string): Promise<PaymentResult | null> {
+export async function createRukassaPayment(amount: number, orderId: string, description: string, userCode?: string): Promise<PaymentResult | null> {
   const apiKey = process.env.RUKASSA_API_KEY;
   const shopId = process.env.RUKASSA_SHOP_ID;
   if (!apiKey || !shopId) {
@@ -175,6 +176,7 @@ export async function createRukassaPayment(amount: number, orderId: string, desc
     formData.append("token", apiKey);
     formData.append("order_id", orderId);
     formData.append("amount", amount.toString());
+    if (userCode) formData.append("user_code", userCode);
     const res = await fetch("https://lk.rukassa.io/api/v1/create", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -279,9 +281,9 @@ export async function createClickPayment(amount: number, orderId: string): Promi
   return { orderId, payUrl };
 }
 
-export async function createPayment(gateway: string, amount: number, orderId: string, description: string): Promise<PaymentResult | null> {
+export async function createPayment(gateway: string, amount: number, orderId: string, description: string, userCode?: string): Promise<PaymentResult | null> {
   switch (gateway) {
-    case "rukassa":     return createRukassaPayment(amount, orderId, description);
+    case "rukassa":     return createRukassaPayment(amount, orderId, description, userCode);
     case "nowpayments": return createNowPayment(amount, orderId, description);
     case "crystalpay":  return createCrystalPayPayment(amount, orderId, description);
     case "click":       return createClickPayment(amount, orderId);
