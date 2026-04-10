@@ -39,7 +39,7 @@ router.post("/deposit", authMiddleware, async (req, res) => {
   try {
     const userId = (req as any).userId;
     const { amount, gateway = "rukassa" } = req.body;
-    if (!amount || amount < 10) { res.status(400).json({ message: "Min deposit 10 RUB" }); return; }
+    if (!amount || amount < 500) { res.status(400).json({ message: "Min deposit 500 RUB" }); return; }
 
     const [tx] = await db.insert(transactions).values({
       userId,
