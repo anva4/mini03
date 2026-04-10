@@ -20,7 +20,7 @@ const RUKASSA_PAYOUT_METHODS: Record<string, string> = {
 
 /**
  * Создаёт автоматическую выплату через Rukassa createWithdraw API.
- * Docs: https://lk.rukassa.pro/api/v1 → createWithdraw
+ * Docs: https://lk.rukassa.io/api/v1 → createWithdraw
  * @param amount   Сумма в рублях
  * @param orderId  ID транзакции в нашей БД (для логов)
  * @param method   card | sbp | qiwi
@@ -44,7 +44,7 @@ export async function createRukassaPayout(
     return null;
   }
   try {
-    const res = await fetch("https://lk.rukassa.pro/api/v1/createWithdraw", {
+    const res = await fetch("https://lk.rukassa.io/api/v1/createWithdraw", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -169,16 +169,15 @@ export async function createRukassaPayment(amount: number, orderId: string, desc
     return null;
   }
   try {
-    const res = await fetch("https://lk.rukassa.pro/api/v1/create", {
+    const formData = new URLSearchParams();
+    formData.append("shop_id", shopId);
+    formData.append("token", apiKey);
+    formData.append("order_id", orderId);
+    formData.append("amount", amount.toString());
+    const res = await fetch("https://lk.rukassa.io/api/v1/create", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        shop_id: Number(shopId),
-        token: apiKey,
-        order_id: orderId,
-        amount: amount.toString(),
-        description,
-      }),
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: formData.toString(),
     });
     const data = await res.json() as Record<string, unknown>;
     if (typeof data.url === "string") return { orderId, payUrl: data.url };
@@ -206,7 +205,7 @@ export async function createNowPayment(amount: number, orderId: string, descript
       body: JSON.stringify({
         price_amount: amount,
         price_currency: "rub",
-        order_id: orderId,
+        order_id: orderId, // orderId is UUID string, Rukassa accepts string too
         order_description: description,
         success_url: process.env.APP_URL || "",
         cancel_url: process.env.APP_URL || "",
