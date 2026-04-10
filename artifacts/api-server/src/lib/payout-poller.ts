@@ -33,8 +33,6 @@ async function checkRukassaPayoutStatus(rukassaId: string): Promise<string | nul
       }),
     });
     const data = await res.json() as Record<string, unknown>;
-    // Rukassa возвращает: { id, amount, status }
-    // status: PAID | IN PROCESS | WAIT | CANCEL
     if (typeof data.status === "string") return data.status;
     return null;
   } catch (err) {
@@ -43,9 +41,33 @@ async function checkRukassaPayoutStatus(rukassaId: string): Promise<string | nul
   }
 }
 
+async function checkCrystalPayPayoutStatus(payoffId: string): Promise<string | null> {
+  const apiKey   = process.env.CRYSTALPAY_API_KEY;
+  const shopName = process.env.CRYSTALPAY_SHOP_NAME;
+  if (!apiKey || !shopName) return null;
+
+  try {
+    const res = await fetch("https://api.crystalpay.io/v3/payoff/info/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        auth_login:  shopName,
+        auth_secret: apiKey,
+        id:          payoffId,
+      }),
+    });
+    const data = await res.json() as Record<string, unknown>;
+    // state: processing | payed | canceled | failed
+    if (typeof data.state === "string") return data.state;
+    return null;
+  } catch (err) {
+    logger.error(err, "CrystalPay payoff info failed");
+    return null;
+  }
+}
+
 async function pollPendingPayouts(): Promise<void> {
   try {
-    // Берём все pending withdrawal с gatewayOrderId (т.е. отправленные через Rukassa)
     const pending = await db
       .select()
       .from(transactions)
@@ -63,49 +85,41 @@ async function pollPendingPayouts(): Promise<void> {
     logger.info({ count: pending.length }, "Polling payout statuses");
 
     for (const tx of pending) {
-      const rukassaStatus = await checkRukassaPayoutStatus(tx.gatewayOrderId!);
-      if (!rukassaStatus) continue;
+      // Определяем шлюз по описанию транзакции
+      const isCrystal = tx.description?.includes("CrystalPay");
+      let finalStatus: "completed" | "cancelled" | null = null;
 
-      if (rukassaStatus === "PAID") {
-        // Выплата прошла — фиксируем
-        await db.update(transactions)
-          .set({ status: "completed" })
-          .where(eq(transactions.id, tx.id));
+      if (isCrystal) {
+        const state = await checkCrystalPayPayoutStatus(tx.gatewayOrderId!);
+        if (state === "payed") finalStatus = "completed";
+        else if (state === "canceled" || state === "failed") finalStatus = "cancelled";
+      } else {
+        const status = await checkRukassaPayoutStatus(tx.gatewayOrderId!);
+        if (status === "PAID") finalStatus = "completed";
+        else if (status === "CANCEL") finalStatus = "cancelled";
+      }
 
+      if (finalStatus === "completed") {
+        await db.update(transactions).set({ status: "completed" }).where(eq(transactions.id, tx.id));
         await db.update(users).set({
           totalWithdrawn: sql`total_withdrawn + ${tx.amount}::numeric`,
         }).where(eq(users.id, tx.userId));
 
-        const [user] = await db
-          .select({ telegramId: users.telegramId })
-          .from(users)
-          .where(eq(users.id, tx.userId))
-          .limit(1);
-
+        const [user] = await db.select({ telegramId: users.telegramId }).from(users).where(eq(users.id, tx.userId)).limit(1);
         await notifyUser(user?.telegramId, notify.withdrawApproved(tx.amount));
         logger.info({ txId: tx.id }, "Payout completed (poller)");
 
-      } else if (rukassaStatus === "CANCEL") {
-        // Выплата отменена — возвращаем баланс
-        await db.update(transactions)
-          .set({ status: "cancelled" })
-          .where(eq(transactions.id, tx.id));
-
+      } else if (finalStatus === "cancelled") {
+        await db.update(transactions).set({ status: "cancelled" }).where(eq(transactions.id, tx.id));
         await db.update(users).set({
           balance: sql`balance + ${tx.amount}::numeric`,
         }).where(eq(users.id, tx.userId));
 
-        const [user] = await db
-          .select({ telegramId: users.telegramId })
-          .from(users)
-          .where(eq(users.id, tx.userId))
-          .limit(1);
-
+        const [user] = await db.select({ telegramId: users.telegramId }).from(users).where(eq(users.id, tx.userId)).limit(1);
         await notifyUser(user?.telegramId, notify.withdrawRejected(tx.amount, "Автоматическая выплата отменена"));
         await notifyAdmin(`❌ Payout CANCELLED: ${tx.amount} ₽ (tx: ${tx.id}) — баланс возвращён`);
         logger.warn({ txId: tx.id }, "Payout cancelled (poller) — balance restored");
       }
-      // WAIT / IN PROCESS — продолжаем ждать
     }
   } catch (err) {
     logger.error(err, "Payout poller error");
