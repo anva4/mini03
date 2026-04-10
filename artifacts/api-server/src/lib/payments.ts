@@ -44,16 +44,17 @@ export async function createRukassaPayout(
     return null;
   }
   try {
+    const formData = new URLSearchParams();
+    formData.append("email", email);
+    formData.append("password", password);
+    formData.append("way", rukassaMethod);
+    formData.append("wallet", details);
+    formData.append("amount", amount.toString());
+    formData.append("order_id", orderId);
     const res = await fetch("https://lk.rukassa.io/api/v1/createWithdraw", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        email,
-        password,
-        way:    rukassaMethod,
-        wallet: details,
-        amount: amount.toString(),
-      }),
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: formData.toString(),
     });
     const data = await res.json() as Record<string, unknown>;
     logger.info({ data, orderId }, "Rukassa payout response");
