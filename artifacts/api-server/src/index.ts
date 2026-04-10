@@ -3,6 +3,7 @@ import { logger } from "./lib/logger";
 import { seed } from "./seed";
 import { pool } from "@workspace/db";
 import { setupWebhook } from "./lib/bot";
+import { startPayoutPoller } from "./lib/payout-poller";
 
 const rawPort = process.env["PORT"] ?? "3000";
 const port = Number(rawPort);
@@ -217,6 +218,7 @@ async function start() {
   // Seed и webhook запускаем после — не блокируют старт
   seed().catch((err) => logger.error(err, "Seed failed"));
   setupWebhook().catch((err) => logger.error(err, "Webhook setup failed"));
+  startPayoutPoller();
 }
 
 start().catch((err) => {
