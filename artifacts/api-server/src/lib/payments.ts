@@ -5,6 +5,68 @@ interface PaymentResult {
   payUrl: string;
 }
 
+export interface PayoutResult {
+  payoutId: string;
+  status: string; // WAIT | IN PROCESS | PAID | CANCEL
+}
+
+// Маппинг методов вывода на методы Rukassa
+const RUKASSA_PAYOUT_METHODS: Record<string, string> = {
+  card: "card",
+  sbp:  "sbp",
+  qiwi: "qiwi",
+};
+
+/**
+ * Создаёт автоматическую выплату через Rukassa Payout API.
+ * @param amount   Сумма в рублях
+ * @param orderId  ID транзакции в нашей БД
+ * @param method   card | sbp | qiwi
+ * @param details  Номер карты / телефон для СБП / кошелёк
+ */
+export async function createRukassaPayout(
+  amount: number,
+  orderId: string,
+  method: string,
+  details: string,
+): Promise<PayoutResult | null> {
+  const apiKey = process.env.RUKASSA_API_KEY;
+  const shopId = process.env.RUKASSA_SHOP_ID;
+  if (!apiKey || !shopId) {
+    logger.warn("Rukassa not configured — payout skipped");
+    return null;
+  }
+  const rukassaMethod = RUKASSA_PAYOUT_METHODS[method];
+  if (!rukassaMethod) {
+    logger.warn({ method }, "Rukassa payout: unsupported method");
+    return null;
+  }
+  try {
+    const res = await fetch("https://lk.rukassa.pro/api/v1/payout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        shop_id:  shopId,
+        token:    apiKey,
+        order_id: orderId,
+        amount:   amount.toString(),
+        method:   rukassaMethod,
+        data:     details,
+      }),
+    });
+    const data = await res.json() as Record<string, unknown>;
+    logger.info({ data, orderId }, "Rukassa payout response");
+    if (data.id) {
+      return { payoutId: String(data.id), status: String(data.status ?? "WAIT") };
+    }
+    logger.error(data, "Rukassa payout error");
+    return null;
+  } catch (err) {
+    logger.error(err, "Rukassa payout request failed");
+    return null;
+  }
+}
+
 export async function createRukassaPayment(amount: number, orderId: string, description: string): Promise<PaymentResult | null> {
   const apiKey = process.env.RUKASSA_API_KEY;
   const shopId = process.env.RUKASSA_SHOP_ID;
