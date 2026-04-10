@@ -340,7 +340,7 @@ router.get("/deals", async (req, res) => {
     const limitNum = Math.min(100, parseInt(limit));
     const where = status ? eq(deals.status, status) : undefined;
 
-    const [dealsList, [{ total }]] = await Promise.all([
+    const [dealsResult, [{ total }]] = await Promise.all([
       db.execute(sql`
         SELECT d.id, d.deal_number, d.amount, d.commission, d.seller_amount, d.status,
                d.dispute_reason, d.admin_comment, d.created_at, d.buyer_id, d.seller_id,
@@ -356,7 +356,7 @@ router.get("/deals", async (req, res) => {
       db.select({ total: sql<number>`count(*)::int` }).from(deals).where(where),
     ]);
 
-    const mapped = (dealsList as any[]).map((d: any) => ({
+    const mapped = (dealsResult.rows as any[]).map((d: any) => ({
       id: d.id,
       dealNumber: Number(d.deal_number),
       amount: d.amount,
@@ -462,7 +462,7 @@ router.post("/deals/:id/resolve", async (req, res) => {
 router.get("/withdrawals", async (req, res) => {
   try {
     const { status = "pending" } = req.query as any;
-    const rows = await db.execute(sql`
+    const withdrawalsResult = await db.execute(sql`
       SELECT t.id, t.user_id, t.amount, t.withdraw_method, t.withdraw_details,
              t.description, t.status, t.created_at, u.username, u.avatar
       FROM transactions t
@@ -470,7 +470,7 @@ router.get("/withdrawals", async (req, res) => {
       WHERE t.type = 'withdrawal' AND t.status = ${status}
       ORDER BY t.created_at ASC
     `);
-    const mapped = (rows as any[]).map((t: any) => ({
+    const mapped = (withdrawalsResult.rows as any[]).map((t: any) => ({
       id: t.id, userId: t.user_id, amount: t.amount,
       withdrawMethod: t.withdraw_method, withdrawDetails: t.withdraw_details,
       description: t.description, status: t.status, createdAt: Number(t.created_at),
@@ -536,8 +536,7 @@ router.get("/transactions", async (req, res) => {
     if (userId) conditions.push(eq(transactions.userId, userId));
     const where = conditions.length > 0 ? and(...conditions) : undefined;
 
-    const [txList, [{ total }]] = await Promise.all([
-      db.execute(sql`
+    const [txResult, [{ total }]] = await Promise.all([
         SELECT t.id, t.user_id, t.type, t.amount, t.currency, t.status,
                t.description, t.gateway_type, t.withdraw_method,
                t.balance_before, t.balance_after, t.created_at, u.username
@@ -550,7 +549,7 @@ router.get("/transactions", async (req, res) => {
       db.select({ total: sql<number>`count(*)::int` }).from(transactions).where(where),
     ]);
 
-    const mapped = (txList as any[]).map((t: any) => ({
+    const mapped = (txResult.rows as any[]).map((t: any) => ({
       id: t.id, userId: t.user_id, type: t.type, amount: t.amount,
       currency: t.currency, status: t.status, description: t.description,
       gatewayType: t.gateway_type, withdrawMethod: t.withdraw_method,
@@ -616,7 +615,7 @@ router.get("/reviews", async (req, res) => {
     const pageNum = Math.max(1, parseInt(page));
     const limitNum = Math.min(100, parseInt(limit));
 
-    const [reviewList, [{ total }]] = await Promise.all([
+    const [reviewResult, [{ total }]] = await Promise.all([
       db.execute(sql`
         SELECT r.id, r.rating, r.comment, r.created_at, r.deal_id,
                a.id as reviewer_id, a.username as reviewer_username, a.avatar as reviewer_avatar,
@@ -630,7 +629,7 @@ router.get("/reviews", async (req, res) => {
       db.select({ total: sql<number>`count(*)::int` }).from(reviews),
     ]);
 
-    const mapped = (reviewList as any[]).map((r: any) => ({
+    const mapped = (reviewResult.rows as any[]).map((r: any) => ({
       id: r.id, rating: Number(r.rating), comment: r.comment,
       createdAt: Number(r.created_at), dealId: r.deal_id,
       reviewer: { id: r.reviewer_id, username: r.reviewer_username, avatar: r.reviewer_avatar },
