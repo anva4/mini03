@@ -251,11 +251,40 @@ export async function createCrystalPayPayment(amount: number, orderId: string, d
   }
 }
 
+// =====================================================================
+// CLICK (Узбекистан)
+// Переменные окружения:
+//   CLICK_SERVICE_ID   — ID сервиса из ЛК Click
+//   CLICK_MERCHANT_ID  — ID мерчанта из ЛК Click
+//   CLICK_SECRET_KEY   — Secret Key для подписи вебхуков
+// =====================================================================
+
+/**
+ * Генерирует URL для оплаты через Click.
+ * Пользователь редиректится на страницу оплаты Click.
+ * После оплаты Click шлёт Prepare + Complete на /api/wallet/webhook/click
+ *
+ * @param amount   Сумма в UZS (узбекских сумах)
+ * @param orderId  ID транзакции в нашей БД
+ */
+export async function createClickPayment(amount: number, orderId: string): Promise<PaymentResult | null> {
+  const serviceId  = process.env.CLICK_SERVICE_ID;
+  const merchantId = process.env.CLICK_MERCHANT_ID;
+  if (!serviceId || !merchantId) {
+    logger.warn("Click not configured — need CLICK_SERVICE_ID and CLICK_MERCHANT_ID");
+    return null;
+  }
+  const returnUrl = encodeURIComponent(`${process.env.APP_URL || ""}/payment/success`);
+  const payUrl = `https://my.click.uz/services/pay?service_id=${serviceId}&merchant_id=${merchantId}&amount=${amount}&transaction_param=${orderId}&return_url=${returnUrl}`;
+  return { orderId, payUrl };
+}
+
 export async function createPayment(gateway: string, amount: number, orderId: string, description: string): Promise<PaymentResult | null> {
   switch (gateway) {
-    case "rukassa": return createRukassaPayment(amount, orderId, description);
+    case "rukassa":     return createRukassaPayment(amount, orderId, description);
     case "nowpayments": return createNowPayment(amount, orderId, description);
-    case "crystalpay": return createCrystalPayPayment(amount, orderId, description);
-    default: return null;
+    case "crystalpay":  return createCrystalPayPayment(amount, orderId, description);
+    case "click":       return createClickPayment(amount, orderId);
+    default:            return null;
   }
 }
