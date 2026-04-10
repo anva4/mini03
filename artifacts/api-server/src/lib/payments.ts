@@ -10,17 +10,19 @@ export interface PayoutResult {
   status: string; // WAIT | IN PROCESS | PAID | CANCEL
 }
 
-// Маппинг методов вывода на методы Rukassa
+// Маппинг методов вывода на методы Rukassa (way)
+// Актуальные значения: CARD, SBP, QIWI, YOOMONEY
 const RUKASSA_PAYOUT_METHODS: Record<string, string> = {
-  card: "card",
-  sbp:  "sbp",
-  qiwi: "qiwi",
+  card: "CARD",
+  sbp:  "SBP",
+  qiwi: "QIWI",
 };
 
 /**
- * Создаёт автоматическую выплату через Rukassa Payout API.
+ * Создаёт автоматическую выплату через Rukassa createWithdraw API.
+ * Docs: https://lk.rukassa.pro/api/v1 → createWithdraw
  * @param amount   Сумма в рублях
- * @param orderId  ID транзакции в нашей БД
+ * @param orderId  ID транзакции в нашей БД (для логов)
  * @param method   card | sbp | qiwi
  * @param details  Номер карты / телефон для СБП / кошелёк
  */
@@ -30,10 +32,10 @@ export async function createRukassaPayout(
   method: string,
   details: string,
 ): Promise<PayoutResult | null> {
-  const apiKey = process.env.RUKASSA_API_KEY;
-  const shopId = process.env.RUKASSA_SHOP_ID;
-  if (!apiKey || !shopId) {
-    logger.warn("Rukassa not configured — payout skipped");
+  const email    = process.env.RUKASSA_EMAIL;
+  const password = process.env.RUKASSA_PASSWORD;
+  if (!email || !password) {
+    logger.warn("Rukassa payout not configured — need RUKASSA_EMAIL and RUKASSA_PASSWORD");
     return null;
   }
   const rukassaMethod = RUKASSA_PAYOUT_METHODS[method];
@@ -42,16 +44,15 @@ export async function createRukassaPayout(
     return null;
   }
   try {
-    const res = await fetch("https://lk.rukassa.pro/api/v1/payout", {
+    const res = await fetch("https://lk.rukassa.pro/api/v1/createWithdraw", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        shop_id:  shopId,
-        token:    apiKey,
-        order_id: orderId,
-        amount:   amount.toString(),
-        method:   rukassaMethod,
-        data:     details,
+        email,
+        password,
+        way:    rukassaMethod,
+        wallet: details,
+        amount: amount.toString(),
       }),
     });
     const data = await res.json() as Record<string, unknown>;
