@@ -10,16 +10,19 @@ import { logger } from "../lib/logger";
 const router = Router();
 const COMMISSION_RATE = 0.07;
 
-// FIX: используем PostgreSQL SEQUENCE для гарантированно уникальных номеров сделок
-// Вместо MAX+1 (race condition при параллельных запросах)
 async function getNextDealNumber(): Promise<number> {
-  const [result] = await db.execute(
-    sql`SELECT nextval('deal_number_seq')::int AS next_val`
-  ) as any;
-  return result.rows[0]?.next_val ?? (
-    // Fallback если sequence ещё не создан: используем MAX+1 с небольшим случайным смещением
-    (await db.select({ max: sql<number>`coalesce(max(deal_number), 1000)::int` }).from(deals))[0].max + 1
-  );
+  try {
+    const result = await db.execute(
+      sql`SELECT nextval('deal_number_seq')::int AS next_val`
+    ) as any;
+    const rows = result.rows ?? result;
+    const val = Array.isArray(rows) ? rows[0]?.next_val : null;
+    if (val != null) return Number(val);
+  } catch {
+    // sequence не создана — используем fallback
+  }
+  const [{ max }] = await db.select({ max: sql<number>`coalesce(max(deal_number), 1000)::int` }).from(deals);
+  return max + 1;
 }
 
 router.get("/", authMiddleware, async (req, res) => {
