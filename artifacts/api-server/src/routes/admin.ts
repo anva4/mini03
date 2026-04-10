@@ -30,48 +30,58 @@ router.get("/stats", async (_req, res) => {
     const now = Math.floor(Date.now() / 1000);
     const todayStart = now - (now % 86400);
 
-    const [
-      [{ totalUsers }], [{ totalProducts }], [{ totalDeals }],
-      [{ totalRevenue }], [{ pendingWithdrawals }], [{ activeDisputes }],
-      [{ todayDeals }], [{ todayRegistrations }], [{ todayVolume }],
-    ] = await Promise.all([
-      db.select({ totalUsers: sql<number>`count(*)::int` }).from(users),
-      db.select({ totalProducts: sql<number>`count(*)::int` }).from(products),
-      db.select({ totalDeals: sql<number>`count(*)::int` }).from(deals),
-      db.select({ totalRevenue: sql<number>`coalesce(sum(commission::numeric), 0)::float` }).from(deals).where(eq(deals.status, "completed")),
-      db.select({ pendingWithdrawals: sql<number>`count(*)::int` }).from(transactions).where(and(eq(transactions.type, "withdrawal"), eq(transactions.status, "pending"))),
-      db.select({ activeDisputes: sql<number>`count(*)::int` }).from(deals).where(eq(deals.status, "disputed")),
-      db.select({ todayDeals: sql<number>`count(*)::int` }).from(deals).where(gte(deals.createdAt, todayStart)),
-      db.select({ todayRegistrations: sql<number>`count(*)::int` }).from(users).where(gte(users.createdAt, todayStart)),
-      db.select({ todayVolume: sql<number>`coalesce(sum(commission::numeric), 0)::float` }).from(deals).where(and(eq(deals.status, "completed"), gte(deals.createdAt, todayStart))),
-    ]);
+    // Один запрос вместо 9 параллельных — значительно быстрее
+    const [row] = await db.execute(sql`
+      SELECT
+        (SELECT count(*)::int FROM users) AS "totalUsers",
+        (SELECT count(*)::int FROM products) AS "totalProducts",
+        (SELECT count(*)::int FROM deals) AS "totalDeals",
+        (SELECT coalesce(sum(commission::numeric), 0)::float FROM deals WHERE status = 'completed') AS "totalRevenue",
+        (SELECT count(*)::int FROM transactions WHERE type = 'withdrawal' AND status = 'pending') AS "pendingWithdrawals",
+        (SELECT count(*)::int FROM deals WHERE status = 'disputed') AS "activeDisputes",
+        (SELECT count(*)::int FROM deals WHERE created_at >= ${todayStart}) AS "todayDeals",
+        (SELECT count(*)::int FROM users WHERE created_at >= ${todayStart}) AS "todayRegistrations",
+        (SELECT coalesce(sum(commission::numeric), 0)::float FROM deals WHERE status = 'completed' AND created_at >= ${todayStart}) AS "todayVolume"
+    `);
 
-    res.json({ totalUsers, totalProducts, totalDeals, totalRevenue, pendingWithdrawals, activeDisputes, todayDeals, todayRegistrations, todayVolume });
+    res.json(row);
   } catch (err) {
     logger.error(err, "Admin stats error");
     res.status(500).json({ message: "Internal server error" });
   }
 });
 
-// FIX+NEW: График доходов — доходность по дням за последние N дней
+// График доходов — один GROUP BY запрос вместо N запросов в цикле
 router.get("/stats/revenue", async (req, res) => {
   try {
     const days = Math.min(90, Math.max(7, parseInt((req.query.days as string) || "30")));
     const now = Math.floor(Date.now() / 1000);
-    const result: { date: string; revenue: number; dealsCount: number }[] = [];
+    const rangeStart = now - (now % 86400) - (days - 1) * 86400;
 
+    // Один запрос с GROUP BY вместо N запросов в цикле
+    const rows = await db.execute(sql`
+      SELECT
+        to_char(to_timestamp(created_at), 'YYYY-MM-DD') AS date,
+        coalesce(sum(commission::numeric), 0)::float AS revenue,
+        count(*)::int AS "dealsCount"
+      FROM deals
+      WHERE status = 'completed' AND created_at >= ${rangeStart}
+      GROUP BY date
+      ORDER BY date ASC
+    `);
+
+    // Заполняем пропущенные дни нулями
+    const dataMap = new Map<string, { revenue: number; dealsCount: number }>();
+    for (const row of rows.rows as any[]) {
+      dataMap.set(row.date, { revenue: row.revenue, dealsCount: row.dealsCount });
+    }
+
+    const result = [];
     for (let i = days - 1; i >= 0; i--) {
       const dayStart = now - (now % 86400) - i * 86400;
-      const dayEnd = dayStart + 86400;
-      const [row] = await db
-        .select({
-          revenue: sql<number>`coalesce(sum(commission::numeric), 0)::float`,
-          dealsCount: sql<number>`count(*)::int`,
-        })
-        .from(deals)
-        .where(and(eq(deals.status, "completed"), gte(deals.createdAt, dayStart), lt(deals.createdAt, dayEnd)));
-      const d = new Date(dayStart * 1000);
-      result.push({ date: d.toISOString().slice(0, 10), revenue: row?.revenue ?? 0, dealsCount: row?.dealsCount ?? 0 });
+      const date = new Date(dayStart * 1000).toISOString().slice(0, 10);
+      const data = dataMap.get(date);
+      result.push({ date, revenue: data?.revenue ?? 0, dealsCount: data?.dealsCount ?? 0 });
     }
 
     res.json(result);
