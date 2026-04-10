@@ -88,8 +88,8 @@ router.get("/", authMiddleware, async (req, res) => {
 
     res.json({ deals: enriched, total: count, page: pageNum, totalPages: Math.ceil(count / limitNum) });
   } catch (err) {
-    logger.error(err, "List deals error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка загрузки сделок");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -97,11 +97,11 @@ router.post("/", authMiddleware, async (req, res) => {
   try {
     const buyerId = (req as any).userId;
     const { productId } = req.body;
-    if (!productId) { res.status(400).json({ message: "Missing productId" }); return; }
+    if (!productId) { res.status(400).json({ message: "Не указан ID товара" }); return; }
 
     const [product] = await db.select().from(products).where(eq(products.id, productId)).limit(1);
-    if (!product || product.status !== "active") { res.status(400).json({ message: "Product not available" }); return; }
-    if (product.sellerId === buyerId) { res.status(400).json({ message: "Cannot buy your own product" }); return; }
+    if (!product || product.status !== "active") { res.status(400).json({ message: "Товар недоступен или снят с продажи" }); return; }
+    if (product.sellerId === buyerId) { res.status(400).json({ message: "Нельзя купить собственный товар" }); return; }
 
     const price = parseFloat(product.price);
     const commission = Math.round(price * COMMISSION_RATE * 100) / 100;
@@ -123,7 +123,7 @@ router.post("/", authMiddleware, async (req, res) => {
       .returning({ newBalance: users.balance, oldTotalPurchases: users.totalPurchases });
 
     if (balanceResult.length === 0) {
-      res.status(400).json({ message: "Insufficient funds" });
+      res.status(400).json({ message: "Недостаточно средств на балансе" });
       return;
     }
 
@@ -157,7 +157,7 @@ router.post("/", authMiddleware, async (req, res) => {
       deal.status = "delivered";
     }
 
-    await notifyAdmin(`New deal #${dealNumber}: ${product.title} — ${price} ₽`);
+    await notifyAdmin(`🛒 Новая сделка #${dealNumber}: ${product.title} — ${price} ₽ | Покупатель: ${buyerInfo?.username || buyerId}`);
 
     // Уведомляем покупателя и продавца
     const [buyerUser] = await db.select({ telegramId: users.telegramId }).from(users).where(eq(users.id, buyerId)).limit(1);
@@ -169,8 +169,8 @@ router.post("/", authMiddleware, async (req, res) => {
 
     res.json(deal);
   } catch (err) {
-    logger.error(err, "Create deal error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка создания сделки");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -178,11 +178,11 @@ router.get("/:id", authMiddleware, async (req, res) => {
   try {
     const userId = (req as any).userId;
     const dealId = normalizeRouteParam(req.params.id);
-    if (!dealId) { res.status(400).json({ message: "Invalid deal id" }); return; }
+    if (!dealId) { res.status(400).json({ message: "Неверный ID сделки" }); return; }
     const [deal] = await db.select().from(deals).where(eq(deals.id, dealId)).limit(1);
-    if (!deal) { res.status(404).json({ message: "Not found" }); return; }
+    if (!deal) { res.status(404).json({ message: "Не найдено" }); return; }
     if (deal.buyerId !== userId && deal.sellerId !== userId && !(req as any).isAdmin) {
-      res.status(403).json({ message: "Forbidden" }); return;
+      res.status(403).json({ message: "Нет доступа" }); return;
     }
 
     const [product] = await db.select({ title: products.title, images: products.images }).from(products).where(eq(products.id, deal.productId)).limit(1);
@@ -191,8 +191,8 @@ router.get("/:id", authMiddleware, async (req, res) => {
 
     res.json({ ...deal, product, buyer, seller });
   } catch (err) {
-    logger.error(err, "Get deal error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка загрузки сделки");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -200,10 +200,10 @@ router.post("/:id/deliver", authMiddleware, async (req, res) => {
   try {
     const userId = (req as any).userId;
     const dealId = normalizeRouteParam(req.params.id);
-    if (!dealId) { res.status(400).json({ message: "Invalid deal id" }); return; }
+    if (!dealId) { res.status(400).json({ message: "Неверный ID сделки" }); return; }
     const [deal] = await db.select().from(deals).where(eq(deals.id, dealId)).limit(1);
-    if (!deal || deal.sellerId !== userId) { res.status(403).json({ message: "Forbidden" }); return; }
-    if (deal.status !== "paid") { res.status(400).json({ message: "Invalid status" }); return; }
+    if (!deal || deal.sellerId !== userId) { res.status(403).json({ message: "Нет доступа" }); return; }
+    if (deal.status !== "paid") { res.status(400).json({ message: "Недопустимый статус" }); return; }
 
     const { deliveryData } = req.body;
     await db.update(deals).set({ status: "delivered", deliveryData, autoCompleteAt: Math.floor(Date.now() / 1000) + 86400 }).where(eq(deals.id, deal.id));
@@ -213,10 +213,10 @@ router.post("/:id/deliver", authMiddleware, async (req, res) => {
     const [productForDeliver] = await db.select({ title: products.title }).from(products).where(eq(products.id, deal.productId)).limit(1);
     await notifyUser(buyerForDeliver?.telegramId, notify.dealDeliveredBuyer(deal.dealNumber, productForDeliver?.title || "Товар"));
 
-    res.json({ message: "Delivered" });
+    res.json({ message: "Товар передан" });
   } catch (err) {
-    logger.error(err, "Deliver deal error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка передачи товара");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -224,10 +224,10 @@ router.post("/:id/confirm", authMiddleware, async (req, res) => {
   try {
     const userId = (req as any).userId;
     const dealId = normalizeRouteParam(req.params.id);
-    if (!dealId) { res.status(400).json({ message: "Invalid deal id" }); return; }
+    if (!dealId) { res.status(400).json({ message: "Неверный ID сделки" }); return; }
     const [deal] = await db.select().from(deals).where(eq(deals.id, dealId)).limit(1);
-    if (!deal || deal.buyerId !== userId) { res.status(403).json({ message: "Forbidden" }); return; }
-    if (deal.status !== "delivered") { res.status(400).json({ message: "Invalid status" }); return; }
+    if (!deal || deal.buyerId !== userId) { res.status(403).json({ message: "Нет доступа" }); return; }
+    if (deal.status !== "delivered") { res.status(400).json({ message: "Недопустимый статус" }); return; }
 
     await db.update(deals).set({ status: "completed", buyerConfirmed: true }).where(eq(deals.id, deal.id));
 
@@ -261,10 +261,10 @@ router.post("/:id/confirm", authMiddleware, async (req, res) => {
     await notifyUser(sellerForConfirm?.telegramId, notify.dealCompletedSeller(deal.dealNumber, productForConfirm?.title || "Товар", sellerAmount.toFixed(2)));
     await notifyUser(buyerForConfirm?.telegramId, notify.dealCompletedBuyer(deal.dealNumber, productForConfirm?.title || "Товар"));
 
-    res.json({ message: "Confirmed" });
+    res.json({ message: "Сделка подтверждена" });
   } catch (err) {
-    logger.error(err, "Confirm deal error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка подтверждения сделки");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -272,17 +272,17 @@ router.post("/:id/dispute", authMiddleware, async (req, res) => {
   try {
     const userId = (req as any).userId;
     const dealId = normalizeRouteParam(req.params.id);
-    if (!dealId) { res.status(400).json({ message: "Invalid deal id" }); return; }
+    if (!dealId) { res.status(400).json({ message: "Неверный ID сделки" }); return; }
     const [deal] = await db.select().from(deals).where(eq(deals.id, dealId)).limit(1);
-    if (!deal || deal.buyerId !== userId) { res.status(403).json({ message: "Forbidden" }); return; }
-    if (!["paid", "delivered"].includes(deal.status)) { res.status(400).json({ message: "Invalid status" }); return; }
+    if (!deal || deal.buyerId !== userId) { res.status(403).json({ message: "Нет доступа" }); return; }
+    if (!["paid", "delivered"].includes(deal.status)) { res.status(400).json({ message: "Недопустимый статус" }); return; }
 
     const { reason } = req.body;
-    if (!reason?.trim()) { res.status(400).json({ message: "Dispute reason is required" }); return; }
+    if (!reason?.trim()) { res.status(400).json({ message: "Укажите причину спора" }); return; }
 
     await db.update(deals).set({ status: "disputed", disputeReason: reason }).where(eq(deals.id, deal.id));
 
-    await notifyAdmin(`Dispute on deal #${deal.dealNumber}: ${reason}`);
+    await notifyAdmin(`⚠️ Спор по сделке #${deal.dealNumber}\nПричина: ${reason}`);
 
     // Уведомляем продавца и покупателя
     const [sellerForDispute] = await db.select({ telegramId: users.telegramId }).from(users).where(eq(users.id, deal.sellerId)).limit(1);
@@ -290,10 +290,10 @@ router.post("/:id/dispute", authMiddleware, async (req, res) => {
     await notifyUser(sellerForDispute?.telegramId, notify.dealDisputedSeller(deal.dealNumber, reason));
     await notifyUser(buyerForDispute?.telegramId, notify.dealDisputedBuyer(deal.dealNumber));
 
-    res.json({ message: "Disputed" });
+    res.json({ message: "Спор открыт" });
   } catch (err) {
-    logger.error(err, "Dispute deal error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка открытия спора");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -301,18 +301,18 @@ router.post("/:id/review", authMiddleware, async (req, res) => {
   try {
     const userId = (req as any).userId;
     const dealId = normalizeRouteParam(req.params.id);
-    if (!dealId) { res.status(400).json({ message: "Invalid deal id" }); return; }
+    if (!dealId) { res.status(400).json({ message: "Неверный ID сделки" }); return; }
     const [deal] = await db.select().from(deals).where(eq(deals.id, dealId)).limit(1);
-    if (!deal || deal.buyerId !== userId) { res.status(403).json({ message: "Forbidden" }); return; }
-    if (deal.status !== "completed") { res.status(400).json({ message: "Deal not completed" }); return; }
+    if (!deal || deal.buyerId !== userId) { res.status(403).json({ message: "Нет доступа" }); return; }
+    if (deal.status !== "completed") { res.status(400).json({ message: "Сделка ещё не завершена" }); return; }
 
-    if (deal.sellerId === userId) { res.status(400).json({ message: "Cannot review yourself" }); return; }
+    if (deal.sellerId === userId) { res.status(400).json({ message: "Нельзя оставить отзыв самому себе" }); return; }
 
     const existing = await db.select().from(reviews).where(eq(reviews.dealId, deal.id)).limit(1);
-    if (existing.length > 0) { res.status(400).json({ message: "Already reviewed" }); return; }
+    if (existing.length > 0) { res.status(400).json({ message: "Вы уже оставили отзыв по этой сделке" }); return; }
 
     const { rating, comment } = req.body;
-    if (!rating || rating < 1 || rating > 5) { res.status(400).json({ message: "Invalid rating" }); return; }
+    if (!rating || rating < 1 || rating > 5) { res.status(400).json({ message: "Оценка должна быть от 1 до 5" }); return; }
 
     const [review] = await db.insert(reviews).values({
       dealId: deal.id,
@@ -331,8 +331,8 @@ router.post("/:id/review", authMiddleware, async (req, res) => {
 
     res.json(review);
   } catch (err) {
-    logger.error(err, "Leave review error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка создания отзыва");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
