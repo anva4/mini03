@@ -21,8 +21,8 @@ router.get("/", async (_req, res) => {
       .orderBy(asc(categories.sortOrder));
     res.json(cats);
   } catch (err) {
-    logger.error(err, "Get categories error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка загрузки категорий");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
