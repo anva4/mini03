@@ -1,4 +1,5 @@
 import { Router } from "express";
+import crypto from "node:crypto";
 import { db } from "@workspace/db";
 import { users, transactions } from "@workspace/db/schema";
 import { eq, desc, and, sql } from "drizzle-orm";
@@ -201,6 +202,161 @@ router.get("/transactions", authMiddleware, async (req, res) => {
   } catch (err) {
     logger.error(err, "List transactions error");
     res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// =====================================================================
+// CLICK webhook (Узбекистан) — Prepare + Complete
+// Настрой в ЛК Click: URL = https://yourdomain.up.railway.app/api/wallet/webhook/click
+// Переменные окружения: CLICK_SERVICE_ID, CLICK_MERCHANT_ID, CLICK_SECRET_KEY
+// =====================================================================
+
+function clickSign(
+  clickTransId: string | number,
+  serviceId: string | number,
+  secretKey: string,
+  merchantTransId: string,
+  amount: string | number,
+  action: string | number,
+  signTime: string,
+): string {
+  const str = `${clickTransId}${serviceId}${secretKey}${merchantTransId}${amount}${action}${signTime}`;
+  return crypto.createHash("md5").update(str).digest("hex");
+}
+
+router.post("/webhook/click", async (req, res) => {
+  try {
+    const body = req.body;
+    logger.info({ body }, "Click webhook received");
+
+    const {
+      click_trans_id,
+      service_id,
+      merchant_trans_id, // наш transactionId (передан как transaction_param)
+      merchant_prepare_id,
+      amount,
+      action,
+      error: clickError,
+      sign_time,
+      sign_string,
+    } = body;
+
+    const secretKey = process.env.CLICK_SECRET_KEY;
+    if (!secretKey) {
+      logger.error("CLICK_SECRET_KEY not set");
+      res.json({ click_trans_id, merchant_trans_id, error: -1, error_note: "Server misconfigured" });
+      return;
+    }
+
+    // Проверяем подпись
+    const expectedSign = clickSign(click_trans_id, service_id, secretKey, merchant_trans_id, amount, action, sign_time);
+    if (expectedSign !== sign_string) {
+      logger.warn({ expectedSign, sign_string }, "Click sign check failed");
+      res.json({ click_trans_id, merchant_trans_id, error: -1, error_note: "SIGN CHECK FAILED!" });
+      return;
+    }
+
+    // Ошибка на стороне Click (пользователь отменил и т.п.)
+    if (Number(clickError) < 0) {
+      res.json({ click_trans_id, merchant_trans_id, error: Number(clickError), error_note: "Payment error" });
+      return;
+    }
+
+    // Ищем транзакцию по merchant_trans_id
+    const [tx] = await db.select().from(transactions).where(eq(transactions.id, merchant_trans_id)).limit(1);
+
+    if (!tx) {
+      res.json({ click_trans_id, merchant_trans_id, error: -5, error_note: "Transaction not found" });
+      return;
+    }
+
+    // Проверяем сумму (допуск ±1 сум на погрешность округления)
+    if (Math.abs(parseFloat(tx.amount) - parseFloat(amount)) > 1) {
+      res.json({ click_trans_id, merchant_trans_id, error: -2, error_note: "Incorrect parameter amount" });
+      return;
+    }
+
+    const numAction = Number(action);
+
+    // ------------------------------------------------------------------
+    // PREPARE (action = 0)
+    // Click проверяет — существует ли заказ и можно ли его оплатить.
+    // ------------------------------------------------------------------
+    if (numAction === 0) {
+      if (tx.status === "completed") {
+        res.json({ click_trans_id, merchant_trans_id, merchant_prepare_id: tx.id, error: -4, error_note: "Already paid" });
+        return;
+      }
+
+      // Сохраняем click_trans_id для проверки на шаге Complete
+      await db.update(transactions)
+        .set({ gatewayOrderId: String(click_trans_id) })
+        .where(eq(transactions.id, tx.id));
+
+      res.json({
+        click_trans_id,
+        merchant_trans_id,
+        merchant_prepare_id: tx.id,
+        error: 0,
+        error_note: "Success",
+      });
+      return;
+    }
+
+    // ------------------------------------------------------------------
+    // COMPLETE (action = 1)
+    // Click подтверждает — деньги списаны, зачисляем баланс.
+    // ------------------------------------------------------------------
+    if (numAction === 1) {
+      if (!merchant_prepare_id || merchant_prepare_id !== tx.id) {
+        res.json({ click_trans_id, merchant_trans_id, error: -6, error_note: "Transaction does not exist" });
+        return;
+      }
+
+      if (tx.status === "completed") {
+        res.json({ click_trans_id, merchant_trans_id, merchant_confirm_id: tx.id, error: -4, error_note: "Already paid" });
+        return;
+      }
+
+      if (tx.status !== "pending") {
+        res.json({ click_trans_id, merchant_trans_id, error: -9, error_note: "Transaction cancelled" });
+        return;
+      }
+
+      const txAmount = parseFloat(tx.amount);
+
+      // Атомарно зачисляем баланс
+      await db.update(users).set({
+        balance: sql`balance + ${tx.amount}::numeric`,
+        totalDeposited: sql`total_deposited + ${tx.amount}::numeric`,
+      }).where(eq(users.id, tx.userId));
+
+      const [user] = await db.select({ balance: users.balance, telegramId: users.telegramId })
+        .from(users).where(eq(users.id, tx.userId)).limit(1);
+
+      await db.update(transactions).set({
+        status: "completed",
+        balanceBefore: (parseFloat(user.balance) - txAmount).toFixed(2),
+        balanceAfter: user.balance,
+      }).where(eq(transactions.id, tx.id));
+
+      await notifyUser(user.telegramId, notify.depositSuccess(tx.amount, user.balance));
+      logger.info({ txId: tx.id, click_trans_id }, "Click payment completed");
+
+      res.json({
+        click_trans_id,
+        merchant_trans_id,
+        merchant_confirm_id: tx.id,
+        error: 0,
+        error_note: "Success",
+      });
+      return;
+    }
+
+    res.json({ click_trans_id, merchant_trans_id, error: -3, error_note: "Action not found" });
+  } catch (err) {
+    logger.error(err, "Click webhook error");
+    res.status(200).json({ error: -7, error_note: "Server error" });
   }
 });
 
