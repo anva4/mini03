@@ -50,7 +50,7 @@ router.post("/deposit", authMiddleware, async (req, res) => {
       description: `Deposit via ${gateway}`,
     }).returning();
 
-    const paymentResult = await createPayment(gateway, amount, tx.id, `Minions Market deposit`);
+    const paymentResult = await createPayment(gateway, amount, tx.id, `Minions Market deposit`, userId);
 
     if (paymentResult) {
       await db.update(transactions).set({ gatewayOrderId: paymentResult.orderId }).where(eq(transactions.id, tx.id));
