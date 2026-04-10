@@ -1,7 +1,8 @@
 import { db } from "@workspace/db";
-import { categories, users } from "@workspace/db/schema";
+import { categories, users, products } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcrypt";
+import { generatePlaceholderImage } from "./lib/placeholder-image";
 
 const defaultCategories = [
   { name: "Игровые аккаунты", slug: "game-accounts", icon: "🎮", sortOrder: 1 },
@@ -643,6 +644,232 @@ export async function seed() {
       isVerified: true,
       refCode: "ADMIN001",
     });
+  }
+
+  // ─── Demo seller ────────────────────────────────────────────────────────────
+  let demoSeller = (await db.select().from(users).where(eq(users.username, "MinionsShop")).limit(1))[0];
+  if (!demoSeller) {
+    const password = await bcrypt.hash("demo12345", 10);
+    const [created] = await db.insert(users).values({
+      username: "MinionsShop",
+      password,
+      isVerified: true,
+      rating: "4.9",
+      reviewCount: 47,
+      totalSales: 312,
+      refCode: "DEMO0001",
+    }).returning();
+    demoSeller = created;
+  }
+
+  // ─── Demo products (только если их ещё нет) ─────────────────────────────────
+  const existingProds = await db.select({ id: products.id }).from(products)
+    .where(eq(products.sellerId, demoSeller.id)).limit(1);
+
+  if (existingProds.length === 0) {
+    const demoProducts = [
+      {
+        title: "10 000 монет Roblox (Robux)",
+        description: `💎 <b>Быстрое и безопасное пополнение Robux!</b>\n\n` +
+          `• Зачисление в течение 15 минут после оплаты\n` +
+          `• Не требуется логин и пароль\n` +
+          `• Работает для любого региона\n` +
+          `• Гарантия выполнения или возврат средств\n\n` +
+          `Robux — внутриигровая валюта Roblox, которая открывает доступ к эксклюзивным предметам, аватарам и игровым пропускам. Подарите себе или другу!`,
+        price: "890",
+        category: "games",
+        subcategory: "currency",
+        game: "roblox",
+        deliveryType: "manual",
+        tags: ["roblox", "robux", "валюта", "быстро"],
+      },
+      {
+        title: "Аккаунт CS2 — Prime Status + 500 часов",
+        description: `🔫 <b>Готовый аккаунт Counter-Strike 2 с Prime статусом</b>\n\n` +
+          `• Prime Status активирован ✅\n` +
+          `• 500+ часов наигранного времени\n` +
+          `• Без VAC-банов и предупреждений\n` +
+          `• Ранг: MG1 — Silver (на выбор)\n` +
+          `• Инвентарь включён (скины на сумму 200–400 ₽)\n\n` +
+          `Аккаунт полностью ваш — сменим почту и пароль при передаче. Безопасная сделка через платформу.`,
+        price: "1490",
+        category: "games",
+        subcategory: "accounts",
+        game: "counter-strike-2",
+        deliveryType: "manual",
+        tags: ["cs2", "prime", "аккаунт", "без бана"],
+      },
+      {
+        title: "Буст в Valorant до Платины",
+        description: `🎯 <b>Профессиональный буст рейтинга в Valorant</b>\n\n` +
+          `Поднимем ваш аккаунт до Платины 1–3 за 1–3 дня!\n\n` +
+          `✅ Опытные игроки с рейтингом Immortal+\n` +
+          `✅ VPN включён — аккаунт в безопасности\n` +
+          `✅ Ежедневные отчёты о прогрессе\n` +
+          `✅ Офлайн режим — друзья не увидят\n` +
+          `✅ Гарантия результата\n\n` +
+          `📩 После покупки сразу напишите нам в чат для уточнения деталей.`,
+        price: "2200",
+        category: "games",
+        subcategory: "boosting",
+        game: "valorant",
+        deliveryType: "manual",
+        tags: ["valorant", "буст", "платина", "рейтинг"],
+      },
+      {
+        title: "1000 золота World of Warcraft (EU/RU)",
+        description: `🐉 <b>Золото WoW — самый быстрый фарм на рынке</b>\n\n` +
+          `Сервера: Azureus, Gordunni, Howling Fjord и другие RU/EU реалмы.\n\n` +
+          `💰 1000 золота — 450 ₽\n` +
+          `💰 5000 золота — 1900 ₽ (выгода 350 ₽)\n` +
+          `💰 10 000 золота — 3500 ₽\n\n` +
+          `• Передача через торговый дом или лично\n` +
+          `• Без риска для аккаунта\n` +
+          `• Доступно 24/7\n\n` +
+          `Укажите сервер и фракцию в чате после оплаты.`,
+        price: "450",
+        category: "games",
+        subcategory: "currency",
+        game: "world-of-warcraft",
+        deliveryType: "manual",
+        tags: ["wow", "золото", "gold", "eu", "ru"],
+      },
+      {
+        title: "Скин AWP | Asiimov (Field-Tested) CS2",
+        description: `⚔️ <b>AWP | Asiimov — культовый скин CS2</b>\n\n` +
+          `Состояние: Field-Tested (FT) — Float ~0.25\n` +
+          `StatTrak: Нет\n` +
+          `Редкость: Covert\n\n` +
+          `Один из самых узнаваемых скинов в игре. Оранжево-белый футуристический дизайн выглядит отлично на любом уровне заношенности.\n\n` +
+          `✅ Торг на площадке Steam\n` +
+          `✅ Скриншот инвентаря по запросу\n` +
+          `✅ Быстрая передача после оплаты`,
+        price: "3200",
+        category: "games",
+        subcategory: "items",
+        game: "counter-strike-2",
+        deliveryType: "manual",
+        tags: ["cs2", "скин", "awp", "asiimov", "ft"],
+      },
+      {
+        title: "Подписка Minecraft Java Edition — 1 месяц",
+        description: `🧱 <b>Доступ к Minecraft Java Edition на 1 месяц</b>\n\n` +
+          `Получите полноценный доступ к лицензионному Minecraft Java Edition!\n\n` +
+          `• Все актуальные версии включая снапшоты\n` +
+          `• Мультиплеер на любых серверах\n` +
+          `• Скины и плащи\n` +
+          `• Совместимость с модами и сборками\n\n` +
+          `📩 Способ доставки: передача данных аккаунта в чате.\n` +
+          `⏱ Время выдачи: до 30 минут.`,
+        price: "350",
+        category: "games",
+        subcategory: "subs",
+        game: "minecraft",
+        deliveryType: "manual",
+        tags: ["minecraft", "java", "подписка", "лицензия"],
+      },
+      {
+        title: "V-Bucks 13 500 Fortnite",
+        description: `🏗️ <b>13 500 V-Bucks для Fortnite — официально и быстро</b>\n\n` +
+          `V-Bucks — универсальная валюта Fortnite для покупки скинов, кирок, планеров и боевых пропусков.\n\n` +
+          `📦 Что входит:\n` +
+          `• 13 500 V-Bucks на ваш аккаунт\n` +
+          `• Подходит для PS4/PS5, Xbox, PC, Switch\n` +
+          `• Мгновенная активация через подарочную карту\n\n` +
+          `✅ Лицензионный продукт\n` +
+          `✅ Чек после покупки\n` +
+          `✅ Поддержка 24/7`,
+        price: "1750",
+        category: "games",
+        subcategory: "currency",
+        game: "fortnite",
+        deliveryType: "auto",
+        deliveryData: "Код будет передан в чате сделки в течение 5 минут после оплаты. Напишите нам если возникли вопросы.",
+        tags: ["fortnite", "v-bucks", "валюта", "battle royale"],
+      },
+      {
+        title: "Тренер по Dota 2 — 5 уроков индивидуально",
+        description: `⚔️ <b>Персональные уроки по Dota 2 от игрока Immortal-ранга</b>\n\n` +
+          `Устали проигрывать? Хотите вырасти в рейтинге? Профессиональный тренер поможет!\n\n` +
+          `📚 Программа 5 уроков:\n` +
+          `1. Разбор текущего уровня игры\n` +
+          `2. Механика и CSing\n` +
+          `3. Карта, видение и расстановка вардов\n` +
+          `4. Командное взаимодействие\n` +
+          `5. Разбор реплея и итоги\n\n` +
+          `🏆 Тренер: Immortal 6000+ MMR, 8 лет опыта\n` +
+          `⏱ Длительность урока: 60 минут\n` +
+          `🎙 Формат: Discord голос + демонстрация экрана`,
+        price: "2800",
+        category: "games",
+        subcategory: "coaching",
+        game: "dota-2",
+        deliveryType: "manual",
+        tags: ["dota2", "тренер", "coaching", "mmr", "обучение"],
+      },
+      {
+        title: "Аккаунт Spotify Premium — 3 месяца",
+        description: `🎵 <b>Spotify Premium — музыка без рекламы и ограничений</b>\n\n` +
+          `• Без рекламы\n` +
+          `• Скачивание треков для офлайн-прослушивания\n` +
+          `• Высокое качество звука 320 kbps\n` +
+          `• Смена треков в любом порядке\n` +
+          `• Доступ с любого устройства: телефон, ПК, планшет\n\n` +
+          `📩 Доставка: аккаунт с доступом к Premium на 3 месяца.\n` +
+          `⚠️ Не рекомендуем менять данные аккаунта в период подписки.`,
+        price: "490",
+        category: "apps",
+        subcategory: "subs",
+        game: "spotify",
+        deliveryType: "manual",
+        tags: ["spotify", "premium", "музыка", "подписка"],
+      },
+      {
+        title: "Ключ активации Rust (Steam)",
+        description: `🔑 <b>Лицензионный ключ Rust для Steam</b>\n\n` +
+          `Rust — один из лучших survival-игр с открытым миром. Стройте базы, добывайте ресурсы, выживайте против игроков и природы.\n\n` +
+          `✅ Лицензионный ключ для Steam\n` +
+          `✅ Активация в любом регионе\n` +
+          `✅ Все DLC не нужны — это полная версия игры\n` +
+          `✅ Ключ не был использован — гарантия\n\n` +
+          `⏱ Время выдачи: автоматически сразу после оплаты.`,
+        price: "1290",
+        category: "games",
+        subcategory: "keys",
+        game: "rust",
+        deliveryType: "auto",
+        deliveryData: "RUST-XXXX-DEMO-KEY1",
+        tags: ["rust", "ключ", "steam", "survival", "key"],
+      },
+    ];
+
+    for (const prod of demoProducts) {
+      const placeholder = generatePlaceholderImage({
+        title: prod.title,
+        category: prod.category,
+        subcategory: prod.subcategory,
+        game: prod.game,
+      });
+
+      await db.insert(products).values({
+        sellerId: demoSeller.id,
+        title: prod.title,
+        description: prod.description,
+        price: prod.price,
+        category: prod.category,
+        subcategory: prod.subcategory ?? undefined,
+        game: prod.game ?? undefined,
+        images: [placeholder],
+        deliveryType: prod.deliveryType,
+        deliveryData: (prod as any).deliveryData ?? undefined,
+        tags: prod.tags,
+        status: "active",
+        soldCount: Math.floor(Math.random() * 40),
+        views: Math.floor(Math.random() * 300) + 50,
+      });
+    }
+
+    console.log("Demo products seeded:", demoProducts.length);
   }
 
   console.log("Seed completed");
