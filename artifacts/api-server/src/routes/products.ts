@@ -5,6 +5,7 @@ import { eq, desc, asc, sql, and, ilike, or } from "drizzle-orm";
 import { authMiddleware, optionalAuth } from "../lib/auth";
 import { logger } from "../lib/logger";
 import { normalizeRouteParam } from "../lib/params";
+import { generatePlaceholderImage } from "../lib/placeholder-image";
 
 const router = Router();
 
@@ -189,7 +190,7 @@ router.get("/:id", optionalAuth, async (req, res) => {
 
     if (!product) { res.status(404).json({ message: "Not found" }); return; }
 
-    await db.update(products).set({ views: (product.views || 0) + 1 }).where(eq(products.id, product.id));
+    await db.update(products).set({ views: sql`views + 1` }).where(eq(products.id, product.id));
 
     let isFavorited = false;
     const userId = (req as any).userId;
@@ -215,6 +216,10 @@ router.post("/", authMiddleware, async (req, res) => {
       return;
     }
 
+    const finalImages: string[] = (images && images.length > 0)
+      ? images
+      : [generatePlaceholderImage({ title, category, subcategory, game })];
+
     const [product] = await db.insert(products).values({
       sellerId: userId,
       title,
@@ -222,7 +227,7 @@ router.post("/", authMiddleware, async (req, res) => {
       price: price.toString(),
       category,
       subcategory,
-      images: images || [],
+      images: finalImages,
       deliveryType: deliveryType || "manual",
       deliveryData,
       game,
