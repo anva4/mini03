@@ -27,7 +27,7 @@ async function checkRukassaPayoutStatus(rukassaId: string): Promise<string | nul
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        shop_id: shopId,
+        shop_id: Number(shopId),
         token: apiKey,
         id: rukassaId,
       }),
