@@ -4,25 +4,22 @@ import { deals, products, users, reviews, transactions } from "@workspace/db/sch
 import { eq, desc, and, or, sql } from "drizzle-orm";
 import { authMiddleware } from "../lib/auth";
 import { normalizeRouteParam } from "../lib/params";
-import { notifyAdmin } from "../lib/telegram";
+import { notifyAdmin, notifyUser, notify } from "../lib/telegram";
 import { logger } from "../lib/logger";
 
 const router = Router();
 const COMMISSION_RATE = 0.07;
 
+// FIX: используем PostgreSQL SEQUENCE для гарантированно уникальных номеров сделок
+// Вместо MAX+1 (race condition при параллельных запросах)
 async function getNextDealNumber(): Promise<number> {
-  try {
-    const result = await db.execute(
-      sql`SELECT nextval('deal_number_seq')::int AS next_val`
-    ) as any;
-    const rows = result.rows ?? result;
-    const val = Array.isArray(rows) ? rows[0]?.next_val : null;
-    if (val != null) return Number(val);
-  } catch {
-    // sequence не создана — используем fallback
-  }
-  const [{ max }] = await db.select({ max: sql<number>`coalesce(max(deal_number), 1000)::int` }).from(deals);
-  return max + 1;
+  const [result] = await db.execute(
+    sql`SELECT nextval('deal_number_seq')::int AS next_val`
+  ) as any;
+  return result.rows[0]?.next_val ?? (
+    // Fallback если sequence ещё не создан: используем MAX+1 с небольшим случайным смещением
+    (await db.select({ max: sql<number>`coalesce(max(deal_number), 1000)::int` }).from(deals))[0].max + 1
+  );
 }
 
 router.get("/", authMiddleware, async (req, res) => {
@@ -162,6 +159,14 @@ router.post("/", authMiddleware, async (req, res) => {
 
     await notifyAdmin(`New deal #${dealNumber}: ${product.title} — ${price} ₽`);
 
+    // Уведомляем покупателя и продавца
+    const [buyerUser] = await db.select({ telegramId: users.telegramId }).from(users).where(eq(users.id, buyerId)).limit(1);
+    const [sellerUser] = await db.select({ telegramId: users.telegramId, username: users.username }).from(users).where(eq(users.id, product.sellerId)).limit(1);
+    const [buyerInfo] = await db.select({ username: users.username }).from(users).where(eq(users.id, buyerId)).limit(1);
+
+    await notifyUser(buyerUser?.telegramId, notify.dealCreatedBuyer(dealNumber, product.title, price.toFixed(2)));
+    await notifyUser(sellerUser?.telegramId, notify.dealCreatedSeller(dealNumber, product.title, price.toFixed(2), buyerInfo?.username || "?"));
+
     res.json(deal);
   } catch (err) {
     logger.error(err, "Create deal error");
@@ -202,6 +207,11 @@ router.post("/:id/deliver", authMiddleware, async (req, res) => {
 
     const { deliveryData } = req.body;
     await db.update(deals).set({ status: "delivered", deliveryData, autoCompleteAt: Math.floor(Date.now() / 1000) + 86400 }).where(eq(deals.id, deal.id));
+
+    // Уведомляем покупателя
+    const [buyerForDeliver] = await db.select({ telegramId: users.telegramId }).from(users).where(eq(users.id, deal.buyerId)).limit(1);
+    const [productForDeliver] = await db.select({ title: products.title }).from(products).where(eq(products.id, deal.productId)).limit(1);
+    await notifyUser(buyerForDeliver?.telegramId, notify.dealDeliveredBuyer(deal.dealNumber, productForDeliver?.title || "Товар"));
 
     res.json({ message: "Delivered" });
   } catch (err) {
@@ -244,6 +254,13 @@ router.post("/:id/confirm", authMiddleware, async (req, res) => {
 
     await db.update(products).set({ soldCount: sql`${products.soldCount} + 1` }).where(eq(products.id, deal.productId));
 
+    // Уведомляем обоих участников
+    const [sellerForConfirm] = await db.select({ telegramId: users.telegramId }).from(users).where(eq(users.id, deal.sellerId)).limit(1);
+    const [buyerForConfirm] = await db.select({ telegramId: users.telegramId }).from(users).where(eq(users.id, deal.buyerId)).limit(1);
+    const [productForConfirm] = await db.select({ title: products.title }).from(products).where(eq(products.id, deal.productId)).limit(1);
+    await notifyUser(sellerForConfirm?.telegramId, notify.dealCompletedSeller(deal.dealNumber, productForConfirm?.title || "Товар", sellerAmount.toFixed(2)));
+    await notifyUser(buyerForConfirm?.telegramId, notify.dealCompletedBuyer(deal.dealNumber, productForConfirm?.title || "Товар"));
+
     res.json({ message: "Confirmed" });
   } catch (err) {
     logger.error(err, "Confirm deal error");
@@ -266,6 +283,13 @@ router.post("/:id/dispute", authMiddleware, async (req, res) => {
     await db.update(deals).set({ status: "disputed", disputeReason: reason }).where(eq(deals.id, deal.id));
 
     await notifyAdmin(`Dispute on deal #${deal.dealNumber}: ${reason}`);
+
+    // Уведомляем продавца и покупателя
+    const [sellerForDispute] = await db.select({ telegramId: users.telegramId }).from(users).where(eq(users.id, deal.sellerId)).limit(1);
+    const [buyerForDispute] = await db.select({ telegramId: users.telegramId }).from(users).where(eq(users.id, deal.buyerId)).limit(1);
+    await notifyUser(sellerForDispute?.telegramId, notify.dealDisputedSeller(deal.dealNumber, reason));
+    await notifyUser(buyerForDispute?.telegramId, notify.dealDisputedBuyer(deal.dealNumber));
+
     res.json({ message: "Disputed" });
   } catch (err) {
     logger.error(err, "Dispute deal error");
