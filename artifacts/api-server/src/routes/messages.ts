@@ -66,8 +66,8 @@ router.get("/chats", authMiddleware, async (req, res) => {
     chats.sort((a, b) => (b.lastMessage?.createdAt || 0) - (a.lastMessage?.createdAt || 0));
     res.json(chats);
   } catch (err) {
-    logger.error(err, "Get chats error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка загрузки чатов");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -75,7 +75,7 @@ router.get("/:userId", authMiddleware, async (req, res) => {
   try {
     const myId = (req as any).userId;
     const partnerId = normalizeRouteParam(req.params.userId);
-    if (!partnerId) { res.status(400).json({ message: "Invalid user id" }); return; }
+    if (!partnerId) { res.status(400).json({ message: "Неверный ID пользователя" }); return; }
 
     const msgs = await db
       .select({
@@ -116,8 +116,8 @@ router.get("/:userId", authMiddleware, async (req, res) => {
 
     res.json(enriched);
   } catch (err) {
-    logger.error(err, "Get messages error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка загрузки сообщений");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -126,8 +126,8 @@ router.post("/:userId", authMiddleware, async (req, res) => {
     const senderId = (req as any).userId;
     const receiverId = normalizeRouteParam(req.params.userId);
     const { text } = req.body;
-    if (!receiverId) { res.status(400).json({ message: "Invalid user id" }); return; }
-    if (!text?.trim()) { res.status(400).json({ message: "Empty message" }); return; }
+    if (!receiverId) { res.status(400).json({ message: "Неверный ID пользователя" }); return; }
+    if (!text?.trim()) { res.status(400).json({ message: "Нельзя отправить пустое сообщение" }); return; }
 
     // FIX: ограничение длины сообщения
     if (text.trim().length > MAX_MESSAGE_LENGTH) {
@@ -135,16 +135,16 @@ router.post("/:userId", authMiddleware, async (req, res) => {
       return;
     }
 
-    if (senderId === receiverId) { res.status(400).json({ message: "Cannot message yourself" }); return; }
+    if (senderId === receiverId) { res.status(400).json({ message: "Нельзя написать сообщение самому себе" }); return; }
 
     const [receiver] = await db.select({ id: users.id }).from(users).where(eq(users.id, receiverId)).limit(1);
-    if (!receiver) { res.status(404).json({ message: "User not found" }); return; }
+    if (!receiver) { res.status(404).json({ message: "Пользователь не найден" }); return; }
 
     const [msg] = await db.insert(messages).values({ senderId, receiverId, text: text.trim() }).returning();
     res.json(msg);
   } catch (err) {
-    logger.error(err, "Send message error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка отправки сообщения");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
