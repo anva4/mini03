@@ -537,6 +537,7 @@ router.get("/transactions", async (req, res) => {
     const where = conditions.length > 0 ? and(...conditions) : undefined;
 
     const [txResult, [{ total }]] = await Promise.all([
+      db.execute(sql`
         SELECT t.id, t.user_id, t.type, t.amount, t.currency, t.status,
                t.description, t.gateway_type, t.withdraw_method,
                t.balance_before, t.balance_after, t.created_at, u.username
