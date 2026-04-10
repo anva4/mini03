@@ -81,8 +81,8 @@ router.get("/", optionalAuth, async (req, res) => {
       totalPages: Math.ceil(count / limitNum),
     });
   } catch (err) {
-    logger.error(err, "List products error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка загрузки товаров");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -95,8 +95,8 @@ router.get("/stats", async (_req, res) => {
     const [{ totalDeals }] = await db.select({ totalDeals: sql<number>`count(*)::int` }).from(deals).where(eq(deals.status, "completed"));
     res.json({ totalUsers, totalProducts, totalDeals });
   } catch (err) {
-    logger.error(err, "Stats error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка загрузки статистики");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -125,8 +125,8 @@ router.get("/featured", async (_req, res) => {
       .limit(10);
     res.json(prods);
   } catch (err) {
-    logger.error(err, "Get featured error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка загрузки рекомендуемых товаров");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -147,15 +147,15 @@ router.get("/user/favorites", authMiddleware, async (req, res) => {
       .orderBy(desc(favorites.createdAt));
     res.json(favs);
   } catch (err) {
-    logger.error(err, "Get favorites error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка загрузки избранного");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
 router.get("/:id", optionalAuth, async (req, res) => {
   try {
     const productId = normalizeRouteParam(req.params.id);
-    if (!productId) { res.status(400).json({ message: "Invalid product id" }); return; }
+    if (!productId) { res.status(400).json({ message: "Неверный ID товара" }); return; }
 
     const [product] = await db.select({
       id: products.id,
@@ -188,7 +188,7 @@ router.get("/:id", optionalAuth, async (req, res) => {
       .where(eq(products.id, productId))
       .limit(1);
 
-    if (!product) { res.status(404).json({ message: "Not found" }); return; }
+    if (!product) { res.status(404).json({ message: "Не найдено" }); return; }
 
     await db.update(products).set({ views: sql`views + 1` }).where(eq(products.id, product.id));
 
@@ -201,8 +201,8 @@ router.get("/:id", optionalAuth, async (req, res) => {
 
     res.json({ ...product, isFavorited });
   } catch (err) {
-    logger.error(err, "Get product error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка загрузки товара");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -212,7 +212,7 @@ router.post("/", authMiddleware, async (req, res) => {
     const { title, description, price, category, subcategory, images, deliveryType, deliveryData, game, server, tags } = req.body;
 
     if (!title || !description || !price || !category) {
-      res.status(400).json({ message: "Missing required fields" });
+      res.status(400).json({ message: "Не заполнены обязательные поля" });
       return;
     }
 
@@ -237,8 +237,8 @@ router.post("/", authMiddleware, async (req, res) => {
 
     res.json(product);
   } catch (err) {
-    logger.error(err, "Create product error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка создания товара");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -246,9 +246,9 @@ router.put("/:id", authMiddleware, async (req, res) => {
   try {
     const userId = (req as any).userId;
     const productId = normalizeRouteParam(req.params.id);
-    if (!productId) { res.status(400).json({ message: "Invalid product id" }); return; }
+    if (!productId) { res.status(400).json({ message: "Неверный ID товара" }); return; }
     const [existing] = await db.select().from(products).where(eq(products.id, productId)).limit(1);
-    if (!existing || existing.sellerId !== userId) { res.status(403).json({ message: "Forbidden" }); return; }
+    if (!existing || existing.sellerId !== userId) { res.status(403).json({ message: "Нет доступа" }); return; }
 
     const { title, description, price, category, images, deliveryType, deliveryData, game, server, tags, status } = req.body;
     const [product] = await db.update(products).set({
@@ -268,8 +268,8 @@ router.put("/:id", authMiddleware, async (req, res) => {
 
     res.json(product);
   } catch (err) {
-    logger.error(err, "Update product error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка обновления товара");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -277,15 +277,15 @@ router.delete("/:id", authMiddleware, async (req, res) => {
   try {
     const userId = (req as any).userId;
     const productId = normalizeRouteParam(req.params.id);
-    if (!productId) { res.status(400).json({ message: "Invalid product id" }); return; }
+    if (!productId) { res.status(400).json({ message: "Неверный ID товара" }); return; }
     const [existing] = await db.select().from(products).where(eq(products.id, productId)).limit(1);
-    if (!existing || (existing.sellerId !== userId && !(req as any).isAdmin)) { res.status(403).json({ message: "Forbidden" }); return; }
+    if (!existing || (existing.sellerId !== userId && !(req as any).isAdmin)) { res.status(403).json({ message: "Нет доступа" }); return; }
 
     await db.delete(products).where(eq(products.id, productId));
-    res.json({ message: "Deleted" });
+    res.json({ message: "Удалено" });
   } catch (err) {
-    logger.error(err, "Delete product error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка удаления товара");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -293,7 +293,7 @@ router.post("/:id/favorite", authMiddleware, async (req, res) => {
   try {
     const userId = (req as any).userId;
     const productId = normalizeRouteParam(req.params.id);
-    if (!productId) { res.status(400).json({ message: "Invalid product id" }); return; }
+    if (!productId) { res.status(400).json({ message: "Неверный ID товара" }); return; }
     const existing = await db.select().from(favorites).where(and(eq(favorites.userId, userId), eq(favorites.productId, productId))).limit(1);
 
     if (existing.length > 0) {
@@ -304,8 +304,8 @@ router.post("/:id/favorite", authMiddleware, async (req, res) => {
       res.json({ favorited: true });
     }
   } catch (err) {
-    logger.error(err, "Toggle favorite error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка изменения избранного");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
