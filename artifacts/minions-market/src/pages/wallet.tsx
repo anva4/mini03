@@ -117,7 +117,7 @@ export default function WalletPage() {
               <div className="flex flex-col gap-3 pt-2">
                 <div className="flex flex-col gap-2">
                   <Label>{t("amount")} (₽)</Label>
-                  <Input type="number" value={depositAmount} onChange={(e) => setDepositAmount(e.target.value)} placeholder="100" min="10" data-testid="input-deposit-amount" />
+                  <Input type="number" value={depositAmount} onChange={(e) => setDepositAmount(e.target.value)} placeholder="500" min="500" data-testid="input-deposit-amount" />
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label>{t("paymentMethod")}</Label>
