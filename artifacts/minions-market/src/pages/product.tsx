@@ -41,7 +41,10 @@ export default function ProductPage() {
         toast({ title: t("dealCreated") });
         setLocation(`/deal/${deal.id}`);
       },
-      onError: () => toast({ title: t("error"), variant: "destructive" }),
+      onError: (err: any) => {
+        const msg = err?.data?.message || err?.message || t("error");
+        toast({ title: msg, variant: "destructive" });
+      },
     });
   };
 
