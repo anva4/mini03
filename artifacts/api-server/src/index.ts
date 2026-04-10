@@ -192,9 +192,9 @@ async function migrate() {
     `);
 
     // deal_number_seq для уникальных номеров сделок
-    await client.query(\`
+    await client.query(`
       CREATE SEQUENCE IF NOT EXISTS deal_number_seq START 1001 INCREMENT 1;
-    \`);
+    `);
 
     logger.info("Database migration completed");
   } finally {
