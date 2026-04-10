@@ -4,7 +4,7 @@ import { users, transactions } from "@workspace/db/schema";
 import { eq, desc, and, sql } from "drizzle-orm";
 import { authMiddleware } from "../lib/auth";
 import { createPayment } from "../lib/payments";
-import { notifyAdmin } from "../lib/telegram";
+import { notifyAdmin, notifyUser, notify } from "../lib/telegram";
 import { logger } from "../lib/logger";
 
 const router = Router();
@@ -129,6 +129,10 @@ router.post("/withdraw", authMiddleware, async (req, res) => {
 
     await notifyAdmin(`New withdrawal request: ${amount} ₽ via ${method}`);
 
+    // Уведомляем пользователя о создании заявки
+    const [wUser] = await db.select({ telegramId: users.telegramId }).from(users).where(eq(users.id, userId)).limit(1);
+    await notifyUser(wUser?.telegramId, notify.withdrawCreated(amount.toFixed(2), method));
+
     res.json({ transactionId: tx.id, message: "Withdrawal request created" });
   } catch (err) {
     logger.error(err, "Create withdrawal error");
@@ -206,6 +210,9 @@ router.post("/webhook/:gateway", async (req, res) => {
       balanceBefore: (parseFloat(user.balance) - amount).toFixed(2),
       balanceAfter: user.balance,
     }).where(eq(transactions.id, tx.id));
+
+    // Уведомляем пользователя о пополнении
+    await notifyUser(user.telegramId, notify.depositSuccess(amount.toFixed(2), user.balance));
 
     res.json({ ok: true });
   } catch (err) {
