@@ -4,6 +4,7 @@ import { users, products, deals, transactions, categories, reviews, messages } f
 import { eq, desc, sql, ilike, and, gte, lt } from "drizzle-orm";
 import { authMiddleware } from "../lib/auth";
 import { logger } from "../lib/logger";
+import { notifyUser, notifyAdmin, notify } from "../lib/telegram";
 
 const router = Router();
 
@@ -31,7 +32,7 @@ router.get("/stats", async (_req, res) => {
     const todayStart = now - (now % 86400);
 
     // Один запрос вместо 9 параллельных — значительно быстрее
-    const [row] = await db.execute(sql`
+    const statsResult = await db.execute(sql`
       SELECT
         (SELECT count(*)::int FROM users) AS "totalUsers",
         (SELECT count(*)::int FROM products) AS "totalProducts",
@@ -44,7 +45,7 @@ router.get("/stats", async (_req, res) => {
         (SELECT coalesce(sum(commission::numeric), 0)::float FROM deals WHERE status = 'completed' AND created_at >= ${todayStart}) AS "todayVolume"
     `);
 
-    res.json(row);
+    res.json(statsResult.rows[0]);
   } catch (err) {
     logger.error(err, "Admin stats error");
     res.status(500).json({ message: "Internal server error" });
