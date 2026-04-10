@@ -158,7 +158,9 @@ export async function createCrystalPayPayout(
     logger.error(err, "CrystalPay payout request failed");
     return null;
   }
-}(amount: number, orderId: string, description: string): Promise<PaymentResult | null> {
+}
+
+export async function createRukassaPayment(amount: number, orderId: string, description: string): Promise<PaymentResult | null> {
   const apiKey = process.env.RUKASSA_API_KEY;
   const shopId = process.env.RUKASSA_SHOP_ID;
   if (!apiKey || !shopId) {
