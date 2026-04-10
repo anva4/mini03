@@ -32,7 +32,7 @@ const ANGRY_LINES = [
   "ОТПУСТИ!!! 🤬",
 ];
 
-const MINION_W = 72;
+const MINION_W = 48;
 const BASE_SPD = 85;
 const SCARED_SPD = 310;
 const SLEEP_DELAY = 12000;
@@ -61,8 +61,8 @@ function MinionSVG({ state, dir }: { state: MinionState; dir: 1 | -1 }) {
 
   return (
     <svg
-      width="72"
-      height="108"
+      width="48"
+      height="72"
       viewBox="0 0 100 150"
       style={{ transform: dir === -1 ? "scaleX(-1)" : "none", overflow: "visible", display: "block" }}
     >
@@ -278,7 +278,7 @@ function SpeechBubble({ text, alignRight }: { text: string; alignRight: boolean 
   return (
     <div style={{
       position: "absolute",
-      bottom: 112,
+      bottom: 76,
       ...(alignRight ? { right: 0 } : { left: 0 }),
       background: "white",
       border: "2.5px solid #FFD700",
