@@ -168,7 +168,7 @@ export async function createRukassaPayment(amount: number, orderId: string, desc
     return null;
   }
   try {
-    const res = await fetch("https://lk.rukassa.is/api/v1/create", {
+    const res = await fetch("https://lk.rukassa.pro/api/v1/create", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
