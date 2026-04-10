@@ -179,8 +179,22 @@ async function migrate() {
         ADD COLUMN IF NOT EXISTS notification_settings JSONB NOT NULL DEFAULT '{}',
         ADD COLUMN IF NOT EXISTS ban_reason TEXT,
         ADD COLUMN IF NOT EXISTS ban_at BIGINT,
-        ADD COLUMN IF NOT EXISTS ban_until BIGINT;
+        ADD COLUMN IF NOT EXISTS ban_until BIGINT,
+        ADD COLUMN IF NOT EXISTS is_super_admin BOOLEAN NOT NULL DEFAULT false,
+        ADD COLUMN IF NOT EXISTS is_verified BOOLEAN NOT NULL DEFAULT false,
+        ADD COLUMN IF NOT EXISTS total_purchases INTEGER NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS total_volume NUMERIC(12,2) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS rating NUMERIC(3,1) NOT NULL DEFAULT 5.0,
+        ADD COLUMN IF NOT EXISTS review_count INTEGER NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS seller_level TEXT NOT NULL DEFAULT 'newcomer',
+        ADD COLUMN IF NOT EXISTS ref_code TEXT,
+        ADD COLUMN IF NOT EXISTS ref_by TEXT;
     `);
+
+    // deal_number_seq для уникальных номеров сделок
+    await client.query(\`
+      CREATE SEQUENCE IF NOT EXISTS deal_number_seq START 1001 INCREMENT 1;
+    \`);
 
     logger.info("Database migration completed");
   } finally {
@@ -190,16 +204,19 @@ async function migrate() {
 
 async function start() {
   await migrate();
-  await seed().catch((err) => logger.error(err, "Seed failed"));
-  await setupWebhook();
 
-  app.listen(port, "0.0.0.0", (err) => {
-    if (err) {
-      logger.error({ err }, "Error listening on port");
-      process.exit(1);
-    }
-    logger.info({ port }, "Server listening");
+  // Слушаем порт сразу — Railway health check не ждёт seed
+  await new Promise<void>((resolve, reject) => {
+    app.listen(port, "0.0.0.0", (err?: Error) => {
+      if (err) { reject(err); return; }
+      logger.info({ port }, "Server listening");
+      resolve();
+    });
   });
+
+  // Seed и webhook запускаем после — не блокируют старт
+  seed().catch((err) => logger.error(err, "Seed failed"));
+  setupWebhook().catch((err) => logger.error(err, "Webhook setup failed"));
 }
 
 start().catch((err) => {
