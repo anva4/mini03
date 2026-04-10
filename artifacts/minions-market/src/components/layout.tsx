@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
+import { useListDeals } from "@workspace/api-client-react";
 import { useLocation, Link } from "wouter";
-import { Home, Search, PlusCircle, MessageCircle, User, Menu, X, Radio, Settings, Shield, FileText } from "lucide-react";
+import { Home, Search, PlusCircle, MessageCircle, User, Menu, X, Radio, Settings, Shield, FileText, Handshake } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useLang } from "@/lib/i18n";
 import { IconWrapper } from "@/components/ui/icon-wrapper";
@@ -42,6 +43,15 @@ export function Layout({ children }: { children: ReactNode }) {
 
   const [unreadTotal, setUnreadTotal] = useState(0);
 
+  // Считаем активные сделки (paid + delivered + disputed)
+  const { data: activeDealsData } = useListDeals(
+    { role: "all", page: 1, limit: 50 },
+    { query: { enabled: isAuthenticated && !user?.isBanned } }
+  );
+  const activeDealsCount = (activeDealsData?.deals || []).filter(
+    (d: any) => ["paid", "delivered", "disputed"].includes(d.status)
+  ).length;
+
   useEffect(() => {
     if (!isAuthenticated || user?.isBanned) return;
     const token = localStorage.getItem("mm_token");
@@ -77,7 +87,7 @@ export function Layout({ children }: { children: ReactNode }) {
     { path: "/catalog", icon: Search, label: t("catalog") },
     { path: "/sell", icon: PlusCircle, label: t("sell") },
     { path: "/messages", icon: MessageCircle, label: t("messages"), badge: unreadTotal },
-    { path: "/profile", icon: User, label: t("profile") },
+    { path: "/deals", icon: Handshake, label: t("deals"), badge: activeDealsCount },
   ];
 
   const menuItems = [
@@ -85,6 +95,7 @@ export function Layout({ children }: { children: ReactNode }) {
     { path: "/catalog", icon: Search, label: t("catalog") },
     { path: "/radio", icon: Radio, label: t("radio") },
     { path: "/profile", icon: User, label: t("profile") },
+    { path: "/deals", icon: Handshake, label: t("deals") },
     { path: "/settings", icon: Settings, label: t("settings") },
     { path: "/legal", icon: FileText, label: t("legal") },
     ...(user?.isAdmin ? [{ path: "/admin", icon: Shield, label: t("admin"), exact: false }] : []),
