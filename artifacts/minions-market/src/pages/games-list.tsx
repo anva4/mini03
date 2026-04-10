@@ -77,12 +77,27 @@ export default function GamesListPage() {
                 href={`/game/${item.slug}`}
                 className="flex flex-col items-center gap-1.5"
               >
-                <div className="w-full aspect-square rounded-[18px] overflow-hidden bg-secondary">
+                <div className="w-full aspect-square rounded-[18px] overflow-hidden bg-secondary relative">
                   <img
                     src={item.image}
                     alt={item.name}
                     className="w-full h-full object-cover"
                     loading="lazy"
+                  />
+                  {/* Glass shine overlay */}
+                  <div className="absolute inset-0 rounded-[18px] pointer-events-none"
+                    style={{
+                      background: "linear-gradient(135deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.06) 40%, rgba(255,255,255,0.00) 60%, rgba(255,255,255,0.04) 100%)",
+                      boxShadow: "inset 0 1px 1px rgba(255,255,255,0.35), inset 0 -1px 1px rgba(0,0,0,0.15)",
+                    }}
+                  />
+                  <div className="absolute pointer-events-none"
+                    style={{
+                      top: "6px", left: "12px", right: "12px", height: "14px",
+                      background: "linear-gradient(180deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.00) 100%)",
+                      borderRadius: "50%",
+                      filter: "blur(2px)",
+                    }}
                   />
                 </div>
                 <span className="text-[10px] text-center leading-tight text-foreground/70 w-full line-clamp-2">
