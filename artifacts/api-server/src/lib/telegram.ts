@@ -47,3 +47,91 @@ export async function notifyAdmin(text: string) {
     await sendTelegramMessage(adminChatId, `🔔 <b>Admin notification</b>\n${text}`);
   }
 }
+
+/**
+ * Отправить уведомление конкретному пользователю по его telegramId
+ * telegramId берётся из поля users.telegram_id в БД
+ */
+export async function notifyUser(telegramId: string | null | undefined, text: string): Promise<void> {
+  if (!telegramId) return;
+  await sendTelegramMessage(telegramId, text);
+}
+
+// ─── Шаблоны уведомлений ────────────────────────────────────────────────────
+
+export const notify = {
+  /** Покупатель создал сделку */
+  dealCreatedBuyer: (dealNumber: number, productTitle: string, amount: string) =>
+    `🛒 <b>Сделка #${dealNumber} создана</b>\n\n` +
+    `Товар: <b>${productTitle}</b>\n` +
+    `Сумма: <b>${amount} ₽</b>\n\n` +
+    `Ожидайте передачи товара от продавца.`,
+
+  /** Продавец — новый заказ */
+  dealCreatedSeller: (dealNumber: number, productTitle: string, amount: string, buyerUsername: string) =>
+    `📦 <b>Новый заказ #${dealNumber}!</b>\n\n` +
+    `Товар: <b>${productTitle}</b>\n` +
+    `Покупатель: @${buyerUsername}\n` +
+    `Сумма: <b>${amount} ₽</b>\n\n` +
+    `Передайте товар покупателю как можно скорее.`,
+
+  /** Продавец передал товар */
+  dealDeliveredBuyer: (dealNumber: number, productTitle: string) =>
+    `📬 <b>Товар по сделке #${dealNumber} передан!</b>\n\n` +
+    `<b>${productTitle}</b>\n\n` +
+    `Проверьте товар и подтвердите получение, либо откройте спор.`,
+
+  /** Покупатель подтвердил — сделка завершена */
+  dealCompletedSeller: (dealNumber: number, productTitle: string, sellerAmount: string) =>
+    `✅ <b>Сделка #${dealNumber} завершена!</b>\n\n` +
+    `Товар: <b>${productTitle}</b>\n` +
+    `Зачислено: <b>+${sellerAmount} ₽</b>`,
+
+  dealCompletedBuyer: (dealNumber: number, productTitle: string) =>
+    `✅ <b>Сделка #${dealNumber} завершена</b>\n\n` +
+    `Спасибо за покупку <b>${productTitle}</b>!\n` +
+    `Не забудьте оставить отзыв.`,
+
+  /** Открыт спор */
+  dealDisputedSeller: (dealNumber: number, reason: string) =>
+    `⚠️ <b>Открыт спор по сделке #${dealNumber}</b>\n\n` +
+    `Причина: ${reason}\n\n` +
+    `Администратор рассмотрит ситуацию.`,
+
+  dealDisputedBuyer: (dealNumber: number) =>
+    `⚠️ <b>Спор по сделке #${dealNumber} открыт</b>\n\n` +
+    `Администратор свяжется с вами.`,
+
+  /** Пополнение баланса */
+  depositSuccess: (amount: string, newBalance: string) =>
+    `💰 <b>Баланс пополнен</b>\n\n` +
+    `Зачислено: <b>+${amount} ₽</b>\n` +
+    `Текущий баланс: <b>${newBalance} ₽</b>`,
+
+  /** Заявка на вывод */
+  withdrawCreated: (amount: string, method: string) =>
+    `💳 <b>Заявка на вывод принята</b>\n\n` +
+    `Сумма: <b>${amount} ₽</b>\n` +
+    `Метод: ${method}\n\n` +
+    `Обычно обрабатывается в течение 24 часов.`,
+
+  /** Вывод одобрен/отклонён */
+  withdrawApproved: (amount: string) =>
+    `✅ <b>Вывод одобрен</b>\n\n` +
+    `<b>${amount} ₽</b> отправлены на ваши реквизиты.`,
+
+  withdrawRejected: (amount: string, reason?: string) =>
+    `❌ <b>Вывод отклонён</b>\n\n` +
+    `Сумма: <b>${amount} ₽</b> возвращена на баланс.` +
+    (reason ? `\nПричина: ${reason}` : ""),
+
+  /** Товар прошёл модерацию */
+  productApproved: (productTitle: string) =>
+    `✅ <b>Ваш товар одобрен!</b>\n\n` +
+    `<b>${productTitle}</b> теперь виден всем покупателям.`,
+
+  productRejected: (productTitle: string, reason?: string) =>
+    `❌ <b>Товар отклонён модератором</b>\n\n` +
+    `<b>${productTitle}</b>\n` +
+    (reason ? `Причина: ${reason}` : "Товар не соответствует правилам площадки."),
+};
