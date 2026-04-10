@@ -8,4 +8,7 @@ nixPkgs = ["nodejs_22", "nodePackages.pnpm"]
 
 [deploy]
 startCommand = "pnpm --filter @workspace/api-server start"
-healthcheckPath = ""
+healthcheckPath = "/api/health"
+healthcheckTimeout = 300
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
