@@ -23,14 +23,14 @@ async function checkRukassaPayoutStatus(rukassaId: string): Promise<string | nul
   if (!apiKey || !shopId) return null;
 
   try {
+    const formData = new URLSearchParams();
+    formData.append("shop_id", shopId);
+    formData.append("token", apiKey);
+    formData.append("id", rukassaId);
     const res = await fetch("https://lk.rukassa.io/api/v1/getWithdrawInfo", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        shop_id: Number(shopId),
-        token: apiKey,
-        id: rukassaId,
-      }),
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: formData.toString(),
     });
     const data = await res.json() as Record<string, unknown>;
     if (typeof data.status === "string") return data.status;
