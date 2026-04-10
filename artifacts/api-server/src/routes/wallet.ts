@@ -91,7 +91,7 @@ router.post("/withdraw", authMiddleware, async (req, res) => {
   try {
     const userId = (req as any).userId;
     const { amount, method, details } = req.body;
-    if (!amount || amount < 100) { res.status(400).json({ message: "Min withdrawal 100 RUB" }); return; }
+    if (!amount || amount < 500) { res.status(400).json({ message: "Min withdrawal 500 RUB" }); return; }
     if (!method || !details) { res.status(400).json({ message: "Missing method/details" }); return; }
 
     // FIX: атомарное списание — обновляем баланс только если он >= amount
