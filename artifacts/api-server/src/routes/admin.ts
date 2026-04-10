@@ -307,6 +307,10 @@ router.post("/products/:id/moderate", async (req, res) => {
     const [updated] = await db.update(products).set({ status }).where(eq(products.id, req.params.id)).returning();
     if (!updated) { res.status(404).json({ message: "Product not found" }); return; }
     logger.info({ productId: req.params.id, status, reason }, "Product moderated");
+    // Уведомляем продавца о решении модерации
+    const [modSeller] = await db.select({ telegramId: users.telegramId }).from(users).where(eq(users.id, updated.sellerId)).limit(1);
+    if (status === "active") await notifyUser(modSeller?.telegramId, notify.productApproved(updated.title));
+    else if (status === "rejected") await notifyUser(modSeller?.telegramId, notify.productRejected(updated.title, reason));
     res.json(updated);
   } catch (err) {
     logger.error(err, "Moderate product error");
@@ -496,6 +500,7 @@ router.post("/withdrawals/:id/process", async (req, res) => {
       await db.update(users).set({
         totalWithdrawn: (parseFloat(user.totalWithdrawn) + parseFloat(tx.amount)).toFixed(2),
       }).where(eq(users.id, tx.userId));
+      await notifyUser(user?.telegramId, notify.withdrawApproved(tx.amount));
     } else {
       // Отклонение: возвращаем средства на баланс
       await db.update(transactions).set({ status: "cancelled", description: newDesc }).where(eq(transactions.id, tx.id));
@@ -503,6 +508,7 @@ router.post("/withdrawals/:id/process", async (req, res) => {
       await db.update(users).set({
         balance: (parseFloat(user.balance) + parseFloat(tx.amount)).toFixed(2),
       }).where(eq(users.id, tx.userId));
+      await notifyUser(user?.telegramId, notify.withdrawRejected(tx.amount, note));
     }
 
     logger.info({ txId: tx.id, action, note }, "Withdrawal processed by admin");
