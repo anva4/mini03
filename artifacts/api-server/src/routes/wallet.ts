@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { users, transactions } from "@workspace/db/schema";
 import { eq, desc, and, sql } from "drizzle-orm";
 import { authMiddleware } from "../lib/auth";
-import { createPayment, createRukassaPayout } from "../lib/payments";
+import { createPayment, createRukassaPayout, createCrystalPayPayout } from "../lib/payments";
 import { notifyAdmin, notifyUser, notify } from "../lib/telegram";
 import { logger } from "../lib/logger";
 
@@ -127,19 +127,32 @@ router.post("/withdraw", authMiddleware, async (req, res) => {
       balanceAfter: newBal,
     }).returning();
 
-    // Пробуем автоматически отправить выплату через Rukassa
-    // Crypto выплаты — только вручную через админку
+    // Пробуем автоматически отправить выплату
+    // Приоритет: Rukassa → CrystalPay → вручную
+    // Crypto выплаты — только через CrystalPay (USDT TRC20)
     let autoPayoutDone = false;
     if (method !== "crypto") {
-      const payoutResult = await createRukassaPayout(amount, tx.id, method, details);
-      if (payoutResult) {
-        // Сохраняем ID выплаты Rukassa в транзакцию
+      const rukassaResult = await createRukassaPayout(amount, tx.id, method, details);
+      if (rukassaResult) {
         await db.update(transactions).set({
-          gatewayOrderId: payoutResult.payoutId,
+          gatewayOrderId: rukassaResult.payoutId,
           description: `Auto-payout via Rukassa (${method}): ${details}`,
         }).where(eq(transactions.id, tx.id));
         autoPayoutDone = true;
-        logger.info({ txId: tx.id, payoutId: payoutResult.payoutId }, "Auto-payout initiated");
+        logger.info({ txId: tx.id, payoutId: rukassaResult.payoutId }, "Auto-payout via Rukassa");
+      }
+    }
+
+    // Если Rukassa не сработала (или крипта) — пробуем CrystalPay
+    if (!autoPayoutDone) {
+      const crystalResult = await createCrystalPayPayout(amount, tx.id, method, details);
+      if (crystalResult) {
+        await db.update(transactions).set({
+          gatewayOrderId: crystalResult.payoutId,
+          description: `Auto-payout via CrystalPay (${method}): ${details}`,
+        }).where(eq(transactions.id, tx.id));
+        autoPayoutDone = true;
+        logger.info({ txId: tx.id, payoutId: crystalResult.payoutId }, "Auto-payout via CrystalPay");
       }
     }
 
@@ -295,6 +308,57 @@ router.post("/payout-webhook/rukassa", async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     logger.error(err, "Payout webhook error");
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// Webhook выплат от CrystalPay
+// Укажи в поле callback_url при создании выплаты:
+// https://твой-домен.up.railway.app/api/wallet/payout-webhook/crystalpay
+router.post("/payout-webhook/crystalpay", async (req, res) => {
+  try {
+    const body = req.body;
+    logger.info({ body }, "CrystalPay payout webhook received");
+
+    // CrystalPay шлёт: id, state, extra (наш orderId), signature
+    // state: processing | payed | canceled | failed
+    const payoffId = body.id;
+    const state    = body.state;
+    const orderId  = body.extra; // наш tx.id который мы передали при создании
+
+    if (!orderId) { res.status(400).json({ message: "Invalid webhook: no extra" }); return; }
+
+    const [tx] = await db.select().from(transactions)
+      .where(and(eq(transactions.id, orderId), eq(transactions.type, "withdrawal")))
+      .limit(1);
+
+    if (!tx || tx.status !== "pending") { res.json({ ok: true }); return; }
+
+    if (state === "payed") {
+      await db.update(transactions).set({ status: "completed" }).where(eq(transactions.id, tx.id));
+      await db.update(users).set({
+        totalWithdrawn: sql`total_withdrawn + ${tx.amount}::numeric`,
+      }).where(eq(users.id, tx.userId));
+
+      const [user] = await db.select({ telegramId: users.telegramId }).from(users).where(eq(users.id, tx.userId)).limit(1);
+      await notifyUser(user?.telegramId, notify.withdrawApproved(tx.amount));
+      logger.info({ txId: tx.id, payoffId }, "Payout completed via CrystalPay webhook");
+
+    } else if (state === "canceled" || state === "failed") {
+      await db.update(transactions).set({ status: "cancelled" }).where(eq(transactions.id, tx.id));
+      await db.update(users).set({
+        balance: sql`balance + ${tx.amount}::numeric`,
+      }).where(eq(users.id, tx.userId));
+
+      const [user] = await db.select({ telegramId: users.telegramId }).from(users).where(eq(users.id, tx.userId)).limit(1);
+      await notifyUser(user?.telegramId, notify.withdrawRejected(tx.amount, "Автоматическая выплата отменена"));
+      await notifyAdmin(`❌ Payout ${state.toUpperCase()} by CrystalPay: ${tx.amount} ₽ (tx: ${tx.id}) — баланс возвращён`);
+      logger.warn({ txId: tx.id, state }, "Payout failed/cancelled via CrystalPay — balance restored");
+    }
+
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error(err, "CrystalPay payout webhook error");
     res.status(500).json({ message: "Internal server error" });
   }
 });
