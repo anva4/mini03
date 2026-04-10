@@ -20,7 +20,7 @@ router.get("/balance", authMiddleware, async (req, res) => {
       totalVolume: users.totalVolume,
     }).from(users).where(eq(users.id, (req as any).userId)).limit(1);
 
-    if (!user) { res.status(404).json({ message: "Not found" }); return; }
+    if (!user) { res.status(404).json({ message: "Не найдено" }); return; }
 
     res.json({
       balance: user.balance,
@@ -30,8 +30,8 @@ router.get("/balance", authMiddleware, async (req, res) => {
       totalEarned: user.totalVolume,
     });
   } catch (err) {
-    logger.error(err, "Get balance error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка загрузки баланса");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -39,7 +39,7 @@ router.post("/deposit", authMiddleware, async (req, res) => {
   try {
     const userId = (req as any).userId;
     const { amount, gateway = "rukassa" } = req.body;
-    if (!amount || amount < 500) { res.status(400).json({ message: "Min deposit 500 RUB" }); return; }
+    if (!amount || amount < 500) { res.status(400).json({ message: "Минимальная сумма пополнения — 500 ₽" }); return; }
 
     const [tx] = await db.insert(transactions).values({
       userId,
@@ -59,7 +59,7 @@ router.post("/deposit", authMiddleware, async (req, res) => {
       // FIX: тестовый режим зачисления только в NON-production окружении
       if (process.env.NODE_ENV === "production") {
         await db.update(transactions).set({ status: "cancelled" }).where(eq(transactions.id, tx.id));
-        res.status(400).json({ message: "Payment gateway not configured" });
+        res.status(400).json({ message: "Платёжный шлюз не настроен. Обратитесь к администратору." });
         return;
       }
 
@@ -82,8 +82,8 @@ router.post("/deposit", authMiddleware, async (req, res) => {
       res.json({ transactionId: tx.id, payUrl: null, message: "Deposit credited (test mode)" });
     }
   } catch (err) {
-    logger.error(err, "Create deposit error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка создания платежа");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -91,8 +91,8 @@ router.post("/withdraw", authMiddleware, async (req, res) => {
   try {
     const userId = (req as any).userId;
     const { amount, method, details } = req.body;
-    if (!amount || amount < 500) { res.status(400).json({ message: "Min withdrawal 500 RUB" }); return; }
-    if (!method || !details) { res.status(400).json({ message: "Missing method/details" }); return; }
+    if (!amount || amount < 500) { res.status(400).json({ message: "Минимальная сумма вывода — 500 ₽" }); return; }
+    if (!method || !details) { res.status(400).json({ message: "Укажите метод и реквизиты для вывода" }); return; }
 
     // FIX: атомарное списание — обновляем баланс только если он >= amount
     // Это защита от race condition: два одновременных запроса не смогут уйти в минус
@@ -107,7 +107,7 @@ router.post("/withdraw", authMiddleware, async (req, res) => {
       .returning({ newBalance: users.balance });
 
     if (result.length === 0) {
-      res.status(400).json({ message: "Insufficient funds" });
+      res.status(400).json({ message: "Недостаточно средств на балансе" });
       return;
     }
 
@@ -173,8 +173,8 @@ router.post("/withdraw", authMiddleware, async (req, res) => {
       auto: autoPayoutDone,
     });
   } catch (err) {
-    logger.error(err, "Create withdrawal error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка создания заявки на вывод");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -200,8 +200,8 @@ router.get("/transactions", authMiddleware, async (req, res) => {
 
     res.json({ transactions: txs, total: count, page: pageNum, totalPages: Math.ceil(count / limitNum) });
   } catch (err) {
-    logger.error(err, "List transactions error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка загрузки транзакций");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -341,7 +341,7 @@ router.post("/webhook/click", async (req, res) => {
       }).where(eq(transactions.id, tx.id));
 
       await notifyUser(user.telegramId, notify.depositSuccess(tx.amount, user.balance));
-      logger.info({ txId: tx.id, click_trans_id }, "Click payment completed");
+      logger.info({ txId: tx.id, click_trans_id, userId: tx.userId, amount: tx.amount }, "Платёж Click успешно завершён");
 
       res.json({
         click_trans_id,
@@ -355,7 +355,7 @@ router.post("/webhook/click", async (req, res) => {
 
     res.json({ click_trans_id, merchant_trans_id, error: -3, error_note: "Action not found" });
   } catch (err) {
-    logger.error(err, "Click webhook error");
+    logger.error(err, "Ошибка вебхука Click");
     res.status(200).json({ error: -7, error_note: "Server error" });
   }
 });
@@ -382,7 +382,7 @@ router.post("/webhook/:gateway", async (req, res) => {
       status = "completed";
     }
 
-    if (!orderId) { res.status(400).json({ message: "Invalid webhook" }); return; }
+    if (!orderId) { res.status(400).json({ message: "Неверный формат вебхука" }); return; }
 
     const [tx] = await db.select().from(transactions).where(eq(transactions.id, orderId)).limit(1);
     if (!tx || tx.status !== "pending") { res.json({ ok: true }); return; }
@@ -409,8 +409,8 @@ router.post("/webhook/:gateway", async (req, res) => {
 
     res.json({ ok: true });
   } catch (err) {
-    logger.error(err, "Webhook error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка обработки вебхука");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -428,7 +428,7 @@ router.post("/payout-webhook/rukassa", async (req, res) => {
     const orderId = body.order_id;
     const rukassaStatus = body.status;
 
-    if (!orderId) { res.status(400).json({ message: "Invalid webhook" }); return; }
+    if (!orderId) { res.status(400).json({ message: "Неверный формат вебхука" }); return; }
 
     const [tx] = await db.select().from(transactions)
       .where(and(eq(transactions.id, orderId), eq(transactions.type, "withdrawal")))
@@ -445,7 +445,7 @@ router.post("/payout-webhook/rukassa", async (req, res) => {
 
       const [user] = await db.select({ telegramId: users.telegramId }).from(users).where(eq(users.id, tx.userId)).limit(1);
       await notifyUser(user?.telegramId, notify.withdrawApproved(tx.amount));
-      logger.info({ txId: tx.id }, "Payout completed via Rukassa webhook");
+      logger.info({ txId: tx.id }, "Выплата завершена через вебхук Rukassa");
 
     } else if (rukassaStatus === "CANCEL") {
       // Выплата отменена — возвращаем баланс
@@ -457,14 +457,14 @@ router.post("/payout-webhook/rukassa", async (req, res) => {
       const [user] = await db.select({ telegramId: users.telegramId }).from(users).where(eq(users.id, tx.userId)).limit(1);
       await notifyUser(user?.telegramId, notify.withdrawRejected(tx.amount, "Автоматическая выплата отменена"));
       await notifyAdmin(`❌ Payout CANCELLED by Rukassa: ${tx.amount} ₽ (tx: ${tx.id}) — баланс возвращён`);
-      logger.warn({ txId: tx.id }, "Payout cancelled by Rukassa — balance restored");
+      logger.warn({ txId: tx.id }, "Выплата отменена Rukassa — баланс возвращён");
     }
     // IN PROCESS / WAIT — просто ждём, ничего не делаем
 
     res.json({ ok: true });
   } catch (err) {
-    logger.error(err, "Payout webhook error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка вебхука выплаты");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -482,7 +482,7 @@ router.post("/payout-webhook/crystalpay", async (req, res) => {
     const state    = body.state;
     const orderId  = body.extra; // наш tx.id который мы передали при создании
 
-    if (!orderId) { res.status(400).json({ message: "Invalid webhook: no extra" }); return; }
+    if (!orderId) { res.status(400).json({ message: "Неверный вебхук: отсутствует поле extra" }); return; }
 
     const [tx] = await db.select().from(transactions)
       .where(and(eq(transactions.id, orderId), eq(transactions.type, "withdrawal")))
@@ -498,7 +498,7 @@ router.post("/payout-webhook/crystalpay", async (req, res) => {
 
       const [user] = await db.select({ telegramId: users.telegramId }).from(users).where(eq(users.id, tx.userId)).limit(1);
       await notifyUser(user?.telegramId, notify.withdrawApproved(tx.amount));
-      logger.info({ txId: tx.id, payoffId }, "Payout completed via CrystalPay webhook");
+      logger.info({ txId: tx.id, payoffId }, "Выплата завершена через вебхук CrystalPay");
 
     } else if (state === "canceled" || state === "failed") {
       await db.update(transactions).set({ status: "cancelled" }).where(eq(transactions.id, tx.id));
@@ -509,12 +509,12 @@ router.post("/payout-webhook/crystalpay", async (req, res) => {
       const [user] = await db.select({ telegramId: users.telegramId }).from(users).where(eq(users.id, tx.userId)).limit(1);
       await notifyUser(user?.telegramId, notify.withdrawRejected(tx.amount, "Автоматическая выплата отменена"));
       await notifyAdmin(`❌ Payout ${state.toUpperCase()} by CrystalPay: ${tx.amount} ₽ (tx: ${tx.id}) — баланс возвращён`);
-      logger.warn({ txId: tx.id, state }, "Payout failed/cancelled via CrystalPay — balance restored");
+      logger.warn({ txId: tx.id, state }, "Выплата отменена CrystalPay — баланс возвращён");
     }
 
     res.json({ ok: true });
   } catch (err) {
-    logger.error(err, "CrystalPay payout webhook error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка вебхука CrystalPay");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
