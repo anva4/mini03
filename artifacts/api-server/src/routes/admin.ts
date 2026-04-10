@@ -11,14 +11,14 @@ const router = Router();
 // Проверяем isAdmin из БД при каждом запросе — гарантирует немедленное применение смены роли
 async function adminFromDbMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
   const userId = (req as any).userId;
-  if (!userId) { res.status(401).json({ message: "Unauthorized" }); return; }
+  if (!userId) { res.status(401).json({ message: "Необходима авторизация" }); return; }
   try {
     const [user] = await db.select({ isAdmin: users.isAdmin }).from(users).where(eq(users.id, userId)).limit(1);
-    if (!user?.isAdmin) { res.status(403).json({ message: "Admin only" }); return; }
+    if (!user?.isAdmin) { res.status(403).json({ message: "Доступ только для администраторов" }); return; }
     next();
   } catch (err) {
-    logger.error(err, "Admin DB check error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка проверки прав администратора");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 }
 
@@ -47,8 +47,8 @@ router.get("/stats", async (_req, res) => {
 
     res.json(statsResult.rows[0]);
   } catch (err) {
-    logger.error(err, "Admin stats error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка загрузки статистики");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -87,8 +87,8 @@ router.get("/stats/revenue", async (req, res) => {
 
     res.json(result);
   } catch (err) {
-    logger.error(err, "Admin revenue chart error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка загрузки графика доходов");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -140,8 +140,8 @@ router.get("/users", async (req, res) => {
 
     res.json({ users: usersList, total, page: pageNum, totalPages: Math.ceil(total / limitNum) });
   } catch (err) {
-    logger.error(err, "Admin list users error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка загрузки списка пользователей");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -149,7 +149,7 @@ router.get("/users", async (req, res) => {
 router.get("/users/:id", async (req, res) => {
   try {
     const [user] = await db.select().from(users).where(eq(users.id, req.params.id)).limit(1);
-    if (!user) { res.status(404).json({ message: "User not found" }); return; }
+    if (!user) { res.status(404).json({ message: "Пользователь не найден" }); return; }
     const { password: _, twoFACode: __, ...safeUser } = user;
 
     const [[{ buyerDeals }], [{ sellerDeals }], recentTransactions] = await Promise.all([
@@ -160,8 +160,8 @@ router.get("/users/:id", async (req, res) => {
 
     res.json({ ...safeUser, buyerDeals, sellerDeals, recentTransactions });
   } catch (err) {
-    logger.error(err, "Admin get user error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка получения данных пользователя");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -169,7 +169,7 @@ router.get("/users/:id", async (req, res) => {
 router.post("/users/:id/ban", async (req, res) => {
   try {
     const { banned, reason, banUntilHours } = req.body;
-    if (typeof banned !== "boolean") { res.status(400).json({ message: "banned must be boolean" }); return; }
+    if (typeof banned !== "boolean") { res.status(400).json({ message: "Поле banned должно быть true или false" }); return; }
     const now = Math.floor(Date.now() / 1000);
     const banUntil = banUntilHours && banned ? now + banUntilHours * 3600 : null;
     const [updated] = await db.update(users).set({
@@ -178,7 +178,7 @@ router.post("/users/:id/ban", async (req, res) => {
       banAt: banned ? now : null,
       banUntil: banUntil ?? undefined,
     }).where(eq(users.id, req.params.id)).returning();
-    if (!updated) { res.status(404).json({ message: "User not found" }); return; }
+    if (!updated) { res.status(404).json({ message: "Пользователь не найден" }); return; }
 
     // Уведомление забаненному через Telegram
     if (updated.telegramId) {
@@ -192,11 +192,11 @@ router.post("/users/:id/ban", async (req, res) => {
     }
 
     const { password: _, twoFACode: __, ...safeUser } = updated;
-    logger.info({ userId: req.params.id, banned, reason }, "User ban status changed");
+    logger.info({ userId: req.params.id, banned, reason }, "Статус блокировки пользователя изменён");
     res.json(safeUser);
   } catch (err) {
-    logger.error(err, "Ban user error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка блокировки пользователя");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -205,12 +205,12 @@ router.post("/users/:id/verify", async (req, res) => {
   try {
     const { verified = true } = req.body;
     const [updated] = await db.update(users).set({ isVerified: verified }).where(eq(users.id, req.params.id)).returning();
-    if (!updated) { res.status(404).json({ message: "User not found" }); return; }
+    if (!updated) { res.status(404).json({ message: "Пользователь не найден" }); return; }
     const { password: _, twoFACode: __, ...safeUser } = updated;
     res.json(safeUser);
   } catch (err) {
-    logger.error(err, "Verify user error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка верификации пользователя");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -218,15 +218,15 @@ router.post("/users/:id/verify", async (req, res) => {
 router.post("/users/:id/role", async (req, res) => {
   try {
     const { isAdmin } = req.body;
-    if (typeof isAdmin !== "boolean") { res.status(400).json({ message: "isAdmin must be boolean" }); return; }
+    if (typeof isAdmin !== "boolean") { res.status(400).json({ message: "Поле isAdmin должно быть true или false" }); return; }
     const [updated] = await db.update(users).set({ isAdmin }).where(eq(users.id, req.params.id)).returning();
-    if (!updated) { res.status(404).json({ message: "User not found" }); return; }
+    if (!updated) { res.status(404).json({ message: "Пользователь не найден" }); return; }
     const { password: _, twoFACode: __, ...safeUser } = updated;
-    logger.info({ userId: req.params.id, isAdmin }, "User role changed by admin");
+    logger.info({ userId: req.params.id, isAdmin }, "Роль пользователя изменена администратором");
     res.json(safeUser);
   } catch (err) {
-    logger.error(err, "Set role error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка изменения роли пользователя");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -235,11 +235,11 @@ router.post("/users/:id/balance", async (req, res) => {
   try {
     const { amount, type, description } = req.body;
     const amountNum = parseFloat(amount);
-    if (!amountNum || isNaN(amountNum) || amountNum <= 0) { res.status(400).json({ message: "Invalid amount" }); return; }
-    if (!["add", "deduct"].includes(type)) { res.status(400).json({ message: "type must be add or deduct" }); return; }
+    if (!amountNum || isNaN(amountNum) || amountNum <= 0) { res.status(400).json({ message: "Неверная сумма" }); return; }
+    if (!["add", "deduct"].includes(type)) { res.status(400).json({ message: "Тип должен быть add (начислить) или deduct (списать)" }); return; }
 
     const [user] = await db.select().from(users).where(eq(users.id, req.params.id)).limit(1);
-    if (!user) { res.status(404).json({ message: "User not found" }); return; }
+    if (!user) { res.status(404).json({ message: "Пользователь не найден" }); return; }
 
     const currentBalance = parseFloat(user.balance);
     const delta = type === "add" ? amountNum : -amountNum;
@@ -258,12 +258,12 @@ router.post("/users/:id/balance", async (req, res) => {
       }),
     ]);
 
-    logger.info({ userId: req.params.id, type, amount: amountNum, newBalance }, "Admin balance adjustment");
+    logger.info({ userId: req.params.id, type, amount: amountNum, newBalance }, "Корректировка баланса администратором");
     const { password: _, twoFACode: __, ...safeUser } = updated;
     res.json(safeUser);
   } catch (err) {
-    logger.error(err, "Balance adjustment error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка корректировки баланса");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -305,8 +305,8 @@ router.get("/products", async (req, res) => {
     const mapped = prods.map((p) => ({ ...p, seller: { username: p.sellerUsername, avatar: p.sellerAvatar } }));
     res.json({ products: mapped, total, page: pageNum, totalPages: Math.ceil(total / limitNum) });
   } catch (err) {
-    logger.error(err, "Admin list products error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка загрузки списка товаров");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -314,18 +314,18 @@ router.get("/products", async (req, res) => {
 router.post("/products/:id/moderate", async (req, res) => {
   try {
     const { status, reason } = req.body;
-    if (!["active", "rejected", "hidden"].includes(status)) { res.status(400).json({ message: "Invalid status" }); return; }
+    if (!["active", "rejected", "hidden"].includes(status)) { res.status(400).json({ message: "Недопустимый статус" }); return; }
     const [updated] = await db.update(products).set({ status }).where(eq(products.id, req.params.id)).returning();
-    if (!updated) { res.status(404).json({ message: "Product not found" }); return; }
-    logger.info({ productId: req.params.id, status, reason }, "Product moderated");
+    if (!updated) { res.status(404).json({ message: "Товар не найден" }); return; }
+    logger.info({ productId: req.params.id, status, reason }, "Товар промодерирован");
     // Уведомляем продавца о решении модерации
     const [modSeller] = await db.select({ telegramId: users.telegramId }).from(users).where(eq(users.id, updated.sellerId)).limit(1);
     if (status === "active") await notifyUser(modSeller?.telegramId, notify.productApproved(updated.title));
     else if (status === "rejected") await notifyUser(modSeller?.telegramId, notify.productRejected(updated.title, reason));
     res.json(updated);
   } catch (err) {
-    logger.error(err, "Moderate product error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка модерации товара");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -333,11 +333,11 @@ router.post("/products/:id/moderate", async (req, res) => {
 router.delete("/products/:id", async (req, res) => {
   try {
     await db.delete(products).where(eq(products.id, req.params.id));
-    logger.info({ productId: req.params.id }, "Product deleted by admin");
+    logger.info({ productId: req.params.id }, "Товар удалён администратором");
     res.status(204).send();
   } catch (err) {
-    logger.error(err, "Delete product error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка удаления товара");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -385,8 +385,8 @@ router.get("/deals", async (req, res) => {
 
     res.json({ deals: mapped, total, page: pageNum, totalPages: Math.ceil(total / limitNum) });
   } catch (err) {
-    logger.error(err, "Admin list deals error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка загрузки списка сделок");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -395,13 +395,13 @@ router.post("/deals/:id/resolve", async (req, res) => {
   try {
     const { resolution, adminComment } = req.body;
     if (!["refund_buyer", "pay_seller", "split"].includes(resolution)) {
-      res.status(400).json({ message: "resolution must be refund_buyer | pay_seller | split" }); return;
+      res.status(400).json({ message: "Решение должно быть: refund_buyer, pay_seller или split" }); return;
     }
 
     const [deal] = await db.select().from(deals).where(eq(deals.id, req.params.id)).limit(1);
-    if (!deal) { res.status(404).json({ message: "Deal not found" }); return; }
+    if (!deal) { res.status(404).json({ message: "Сделка не найдена" }); return; }
     if (!["disputed", "pending"].includes(deal.status)) {
-      res.status(400).json({ message: "Deal cannot be resolved in current state" }); return;
+      res.status(400).json({ message: "Сделку невозможно завершить в текущем статусе" }); return;
     }
 
     if (resolution === "refund_buyer") {
@@ -459,11 +459,11 @@ router.post("/deals/:id/resolve", async (req, res) => {
       ]);
     }
 
-    logger.info({ dealId: deal.id, resolution, adminComment }, "Deal resolved by admin");
-    res.json({ message: "Resolved" });
+    logger.info({ dealId: deal.id, resolution, adminComment }, "Спор по сделке решён администратором");
+    res.json({ message: "Решение принято" });
   } catch (err) {
-    logger.error(err, "Resolve deal error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка решения спора");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -489,8 +489,8 @@ router.get("/withdrawals", async (req, res) => {
     }));
     res.json(mapped);
   } catch (err) {
-    logger.error(err, "Admin withdrawals error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка загрузки выплат");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -498,10 +498,10 @@ router.get("/withdrawals", async (req, res) => {
 router.post("/withdrawals/:id/process", async (req, res) => {
   try {
     const { action, note } = req.body;
-    if (!["approve", "reject"].includes(action)) { res.status(400).json({ message: "action must be approve or reject" }); return; }
+    if (!["approve", "reject"].includes(action)) { res.status(400).json({ message: "Действие должно быть approve (одобрить) или reject (отклонить)" }); return; }
 
     const [tx] = await db.select().from(transactions).where(eq(transactions.id, req.params.id)).limit(1);
-    if (!tx || tx.status !== "pending") { res.status(400).json({ message: "Transaction not found or not pending" }); return; }
+    if (!tx || tx.status !== "pending") { res.status(400).json({ message: "Транзакция не найдена или уже обработана" }); return; }
 
     const newDesc = note ? `${tx.description ?? ""} — ${action === "approve" ? "Одобрено" : "Отклонено"}: ${note}` : tx.description;
 
@@ -524,11 +524,11 @@ router.post("/withdrawals/:id/process", async (req, res) => {
       await notifyUser(user?.telegramId, notify.withdrawRejected(tx.amount, note));
     }
 
-    logger.info({ txId: tx.id, action, note }, "Withdrawal processed by admin");
+    logger.info({ txId: tx.id, action, note }, "Выплата обработана администратором");
     res.json({ message: `Withdrawal ${action}ed` });
   } catch (err) {
-    logger.error(err, "Process withdrawal error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка обработки выплаты");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -571,8 +571,8 @@ router.get("/transactions", async (req, res) => {
 
     res.json({ transactions: mapped, total, page: pageNum, totalPages: Math.ceil(total / limitNum) });
   } catch (err) {
-    logger.error(err, "Admin transactions error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка загрузки транзакций");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -581,12 +581,12 @@ router.get("/transactions", async (req, res) => {
 router.post("/categories", async (req, res) => {
   try {
     const { name, slug, icon, sortOrder } = req.body;
-    if (!name || !slug) { res.status(400).json({ message: "Missing name/slug" }); return; }
+    if (!name || !slug) { res.status(400).json({ message: "Укажите название и slug категории" }); return; }
     const [cat] = await db.insert(categories).values({ name, slug, icon, sortOrder: sortOrder || 0 }).returning();
     res.status(201).json(cat);
   } catch (err) {
-    logger.error(err, "Create category error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка создания категории");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -600,11 +600,11 @@ router.put("/categories/:id", async (req, res) => {
       ...(sortOrder !== undefined ? { sortOrder } : {}),
       ...(isActive !== undefined ? { isActive } : {}),
     }).where(eq(categories.id, req.params.id)).returning();
-    if (!cat) { res.status(404).json({ message: "Category not found" }); return; }
+    if (!cat) { res.status(404).json({ message: "Категория не найдена" }); return; }
     res.json(cat);
   } catch (err) {
-    logger.error(err, "Update category error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка обновления категории");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -613,8 +613,8 @@ router.delete("/categories/:id", async (req, res) => {
     await db.delete(categories).where(eq(categories.id, req.params.id));
     res.status(204).send();
   } catch (err) {
-    logger.error(err, "Delete category error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка удаления категории");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -650,8 +650,8 @@ router.get("/reviews", async (req, res) => {
 
     res.json({ reviews: mapped, total, page: pageNum, totalPages: Math.ceil(total / limitNum) });
   } catch (err) {
-    logger.error(err, "Admin reviews error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка загрузки отзывов");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -659,11 +659,11 @@ router.get("/reviews", async (req, res) => {
 router.delete("/reviews/:id", async (req, res) => {
   try {
     await db.delete(reviews).where(eq(reviews.id, req.params.id));
-    logger.info({ reviewId: req.params.id }, "Review deleted by admin");
+    logger.info({ reviewId: req.params.id }, "Отзыв удалён администратором");
     res.status(204).send();
   } catch (err) {
-    logger.error(err, "Delete review error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка удаления отзыва");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
@@ -674,7 +674,7 @@ router.post("/broadcast", async (req, res) => {
   try {
     const adminId = (req as any).userId;
     const { text, targetUserId } = req.body;
-    if (!text?.trim()) { res.status(400).json({ message: "Message text required" }); return; }
+    if (!text?.trim()) { res.status(400).json({ message: "Введите текст сообщения" }); return; }
 
     if (targetUserId) {
       await db.insert(messages).values({ senderId: adminId, receiverId: targetUserId, text: text.trim() });
@@ -694,12 +694,12 @@ router.post("/broadcast", async (req, res) => {
         await db.insert(messages).values(rows.slice(i, i + 100));
         sent += rows.slice(i, i + 100).length;
       }
-      logger.info({ adminId, sent }, "Admin broadcast message sent");
+      logger.info({ adminId, sent }, "Рассылка от администратора отправлена");
       res.json({ sent });
     }
   } catch (err) {
-    logger.error(err, "Broadcast error");
-    res.status(500).json({ message: "Internal server error" });
+    logger.error(err, "Ошибка рассылки");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
