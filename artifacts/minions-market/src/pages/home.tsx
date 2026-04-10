@@ -59,12 +59,28 @@ function CategoryRow({
           {items.slice(0, 16).map((item) => (
             <Link key={item.slug} href={`/game/${item.slug}`} className="flex flex-col items-center gap-1">
               <div className="relative w-[72px]">
-                <div className="w-[72px] h-[72px] rounded-[18px] overflow-hidden" style={{ background: item.bg || "#1a2533" }}>
+                <div className="w-[72px] h-[72px] rounded-[18px] overflow-hidden relative" style={{ background: item.bg || "#1a2533" }}>
                   {item.image ? (
                     <img src={item.image} alt={item.name} className="w-full h-full object-cover" loading="lazy" />
                   ) : item.icon ? (
                     <IconWrapper size="xl" className="text-white"><item.icon /></IconWrapper>
                   ) : null}
+                  {/* Glass shine overlay */}
+                  <div className="absolute inset-0 rounded-[18px] pointer-events-none"
+                    style={{
+                      background: "linear-gradient(135deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.06) 40%, rgba(255,255,255,0.00) 60%, rgba(255,255,255,0.04) 100%)",
+                      boxShadow: "inset 0 1px 1px rgba(255,255,255,0.35), inset 0 -1px 1px rgba(0,0,0,0.15)",
+                    }}
+                  />
+                  {/* Top glare streak */}
+                  <div className="absolute pointer-events-none"
+                    style={{
+                      top: "5px", left: "10px", right: "10px", height: "12px",
+                      background: "linear-gradient(180deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.00) 100%)",
+                      borderRadius: "50%",
+                      filter: "blur(2px)",
+                    }}
+                  />
                 </div>
                 {newSet.has(item.slug) && (
                   <span className="absolute -top-1 left-1/2 -translate-x-1/2 bg-green-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap">Новое</span>
