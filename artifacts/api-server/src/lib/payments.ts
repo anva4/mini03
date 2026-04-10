@@ -173,7 +173,7 @@ export async function createRukassaPayment(amount: number, orderId: string, desc
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        shop_id: shopId,
+        shop_id: Number(shopId),
         token: apiKey,
         order_id: orderId,
         amount: amount.toString(),
