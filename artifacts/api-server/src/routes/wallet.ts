@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { users, transactions } from "@workspace/db/schema";
 import { eq, desc, and, sql } from "drizzle-orm";
 import { authMiddleware } from "../lib/auth";
-import { createPayment } from "../lib/payments";
+import { createPayment, createRukassaPayout } from "../lib/payments";
 import { notifyAdmin, notifyUser, notify } from "../lib/telegram";
 import { logger } from "../lib/logger";
 
@@ -127,13 +127,37 @@ router.post("/withdraw", authMiddleware, async (req, res) => {
       balanceAfter: newBal,
     }).returning();
 
-    await notifyAdmin(`New withdrawal request: ${amount} ₽ via ${method}`);
+    // Пробуем автоматически отправить выплату через Rukassa
+    // Crypto выплаты — только вручную через админку
+    let autoPayoutDone = false;
+    if (method !== "crypto") {
+      const payoutResult = await createRukassaPayout(amount, tx.id, method, details);
+      if (payoutResult) {
+        // Сохраняем ID выплаты Rukassa в транзакцию
+        await db.update(transactions).set({
+          gatewayOrderId: payoutResult.payoutId,
+          description: `Auto-payout via Rukassa (${method}): ${details}`,
+        }).where(eq(transactions.id, tx.id));
+        autoPayoutDone = true;
+        logger.info({ txId: tx.id, payoutId: payoutResult.payoutId }, "Auto-payout initiated");
+      }
+    }
 
-    // Уведомляем пользователя о создании заявки
+    await notifyAdmin(
+      autoPayoutDone
+        ? `✅ Auto-payout sent: ${amount} ₽ via ${method} (Rukassa ID: ${tx.id})`
+        : `⚠️ New withdrawal (manual): ${amount} ₽ via ${method}`
+    );
+
+    // Уведомляем пользователя
     const [wUser] = await db.select({ telegramId: users.telegramId }).from(users).where(eq(users.id, userId)).limit(1);
     await notifyUser(wUser?.telegramId, notify.withdrawCreated(amount.toFixed(2), method));
 
-    res.json({ transactionId: tx.id, message: "Withdrawal request created" });
+    res.json({
+      transactionId: tx.id,
+      message: autoPayoutDone ? "Withdrawal initiated automatically" : "Withdrawal request created",
+      auto: autoPayoutDone,
+    });
   } catch (err) {
     logger.error(err, "Create withdrawal error");
     res.status(500).json({ message: "Internal server error" });
@@ -222,3 +246,55 @@ router.post("/webhook/:gateway", async (req, res) => {
 });
 
 export default router;
+
+// Отдельный роут для webhook выплат от Rukassa
+// Rukassa шлёт на URL который настраивается в ЛК → "URL для выплат"
+// Пример: https://yourdomain.com/api/wallet/payout-webhook/rukassa
+router.post("/payout-webhook/rukassa", async (req, res) => {
+  try {
+    const body = req.body;
+    logger.info({ body }, "Rukassa payout webhook received");
+
+    // Rukassa шлёт: id, order_id, amount, status (PAID | IN PROCESS | WAIT | CANCEL)
+    const orderId = body.order_id;
+    const rukassaStatus = body.status;
+
+    if (!orderId) { res.status(400).json({ message: "Invalid webhook" }); return; }
+
+    const [tx] = await db.select().from(transactions)
+      .where(and(eq(transactions.id, orderId), eq(transactions.type, "withdrawal")))
+      .limit(1);
+
+    if (!tx || tx.status !== "pending") { res.json({ ok: true }); return; }
+
+    if (rukassaStatus === "PAID") {
+      // Выплата прошла успешно
+      await db.update(transactions).set({ status: "completed" }).where(eq(transactions.id, tx.id));
+      await db.update(users).set({
+        totalWithdrawn: sql`total_withdrawn + ${tx.amount}::numeric`,
+      }).where(eq(users.id, tx.userId));
+
+      const [user] = await db.select({ telegramId: users.telegramId }).from(users).where(eq(users.id, tx.userId)).limit(1);
+      await notifyUser(user?.telegramId, notify.withdrawApproved(tx.amount));
+      logger.info({ txId: tx.id }, "Payout completed via Rukassa webhook");
+
+    } else if (rukassaStatus === "CANCEL") {
+      // Выплата отменена — возвращаем баланс
+      await db.update(transactions).set({ status: "cancelled" }).where(eq(transactions.id, tx.id));
+      await db.update(users).set({
+        balance: sql`balance + ${tx.amount}::numeric`,
+      }).where(eq(users.id, tx.userId));
+
+      const [user] = await db.select({ telegramId: users.telegramId }).from(users).where(eq(users.id, tx.userId)).limit(1);
+      await notifyUser(user?.telegramId, notify.withdrawRejected(tx.amount, "Автоматическая выплата отменена"));
+      await notifyAdmin(`❌ Payout CANCELLED by Rukassa: ${tx.amount} ₽ (tx: ${tx.id}) — баланс возвращён`);
+      logger.warn({ txId: tx.id }, "Payout cancelled by Rukassa — balance restored");
+    }
+    // IN PROCESS / WAIT — просто ждём, ничего не делаем
+
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error(err, "Payout webhook error");
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
