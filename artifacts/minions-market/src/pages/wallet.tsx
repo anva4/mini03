@@ -146,7 +146,7 @@ export default function WalletPage() {
               <div className="flex flex-col gap-3 pt-2">
                 <div className="flex flex-col gap-2">
                   <Label>{t("amount")} (₽)</Label>
-                  <Input type="number" value={withdrawAmount} onChange={(e) => setWithdrawAmount(e.target.value)} placeholder="100" min="100" data-testid="input-withdraw-amount" />
+                  <Input type="number" value={withdrawAmount} onChange={(e) => setWithdrawAmount(e.target.value)} placeholder="500" min="500" data-testid="input-withdraw-amount" />
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label>{t("withdrawMethod")}</Label>
