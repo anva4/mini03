@@ -22,6 +22,7 @@ export const transactions = pgTable("transactions", {
   index("transactions_user_id_idx").on(table.userId),
   index("transactions_status_idx").on(table.status),
   index("transactions_type_idx").on(table.type),
+  index("transactions_type_status_idx").on(table.type, table.status),
 ]);
 
 export const insertTransactionSchema = createInsertSchema(transactions).omit({ id: true, createdAt: true });
