@@ -5,10 +5,7 @@ import { eq, desc, and, or, sql } from "drizzle-orm";
 import { authMiddleware } from "../lib/auth";
 import { normalizeRouteParam } from "../lib/params";
 import { logger } from "../lib/logger";
-<<<<<<< HEAD
 import { limits } from "../middlewares/rate-limit";
-=======
->>>>>>> 689d826819b40d2220e4ee56731b3491f56230fb
 
 const router = Router();
 
@@ -81,7 +78,6 @@ router.get("/:userId", authMiddleware, async (req, res) => {
     const partnerId = normalizeRouteParam(req.params.userId);
     if (!partnerId) { res.status(400).json({ message: "Неверный ID пользователя" }); return; }
 
-<<<<<<< HEAD
     // FIX: cursor-based пагинация вместо жёсткого limit 100
     // ?before=<createdAt> — грузить сообщения старше этой метки (для подгрузки истории)
     // По умолчанию — последние 50 сообщений
@@ -97,8 +93,6 @@ router.get("/:userId", authMiddleware, async (req, res) => {
       ? and(conversation!, sql`${messages.createdAt} < ${before}`)
       : conversation;
 
-=======
->>>>>>> 689d826819b40d2220e4ee56731b3491f56230fb
     const msgs = await db
       .select({
         id: messages.id,
@@ -112,23 +106,12 @@ router.get("/:userId", authMiddleware, async (req, res) => {
       })
       .from(messages)
       .leftJoin(users, eq(messages.senderId, users.id))
-<<<<<<< HEAD
       .where(whereClause)
       .orderBy(desc(messages.createdAt))  // DESC для эффективной пагинации
       .limit(limitNum);
 
     // Разворачиваем обратно в хронологический порядок для отображения
     msgs.reverse();
-=======
-      .where(
-        or(
-          and(eq(messages.senderId, myId), eq(messages.receiverId, partnerId)),
-          and(eq(messages.senderId, partnerId), eq(messages.receiverId, myId))
-        )
-      )
-      .orderBy(messages.createdAt)
-      .limit(100);
->>>>>>> 689d826819b40d2220e4ee56731b3491f56230fb
 
     await db
       .update(messages)
@@ -145,27 +128,19 @@ router.get("/:userId", authMiddleware, async (req, res) => {
       sender: { id: m.senderId, username: m.senderUsername, avatar: m.senderAvatar },
     }));
 
-<<<<<<< HEAD
     res.json({
       messages: enriched,
       hasMore: msgs.length === limitNum,
       // курсор для следующей страницы (самое раннее сообщение)
       nextCursor: msgs.length > 0 ? msgs[0].createdAt : null,
     });
-=======
-    res.json(enriched);
->>>>>>> 689d826819b40d2220e4ee56731b3491f56230fb
   } catch (err) {
     logger.error(err, "Ошибка загрузки сообщений");
     res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
   }
 });
 
-<<<<<<< HEAD
 router.post("/:userId", authMiddleware, limits.messages, async (req, res) => {
-=======
-router.post("/:userId", authMiddleware, async (req, res) => {
->>>>>>> 689d826819b40d2220e4ee56731b3491f56230fb
   try {
     const senderId = (req as any).userId;
     const receiverId = normalizeRouteParam(req.params.userId);
