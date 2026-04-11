@@ -1,7 +1,11 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { users, authCodes } from "@workspace/db/schema";
+<<<<<<< HEAD
 import { eq, and, gt, isNull, sql } from "drizzle-orm";
+=======
+import { eq, and, gt, isNull } from "drizzle-orm";
+>>>>>>> 689d826819b40d2220e4ee56731b3491f56230fb
 import { hashPassword, comparePassword, signToken } from "../lib/auth";
 import { verifyTelegramWebAppData, sendTelegramMessage } from "../lib/telegram";
 import { logger } from "../lib/logger";
@@ -38,7 +42,11 @@ function resetLoginRateLimit(key: string): void {
 
 router.post("/register", async (req, res) => {
   try {
+<<<<<<< HEAD
     const { username, password, code, telegramUsername, refCode: inputRefCode } = req.body;
+=======
+    const { username, password, code, telegramUsername } = req.body;
+>>>>>>> 689d826819b40d2220e4ee56731b3491f56230fb
     if (!username || !password || !code) {
       res.status(400).json({ message: "Не заполнены обязательные поля" });
       return;
@@ -67,6 +75,7 @@ router.post("/register", async (req, res) => {
 
     await db.update(authCodes).set({ usedAt: Math.floor(Date.now() / 1000) }).where(eq(authCodes.id, validCode[0].id));
 
+<<<<<<< HEAD
     // Проверяем реферальный код пригласившего
     let referrer: typeof users.$inferSelect | null = null;
     if (inputRefCode) {
@@ -78,12 +87,17 @@ router.post("/register", async (req, res) => {
 
     const hashed = await hashPassword(password);
     const newRefCode = Math.random().toString(36).substring(2, 10).toUpperCase();
+=======
+    const hashed = await hashPassword(password);
+    const refCode = Math.random().toString(36).substring(2, 10).toUpperCase();
+>>>>>>> 689d826819b40d2220e4ee56731b3491f56230fb
 
     const [user] = await db.insert(users).values({
       username,
       password: hashed,
       telegramUsername: cleanTgUser,
       telegramId: validCode[0].telegramId || undefined,
+<<<<<<< HEAD
       refCode: newRefCode,
       refBy: referrer?.id ?? undefined,
     }).returning();
@@ -109,6 +123,11 @@ router.post("/register", async (req, res) => {
       logger.info({ referrerId: referrer.id, newUserId: user.id, bonus: REF_BONUS }, "Referral bonus credited");
     }
 
+=======
+      refCode,
+    }).returning();
+
+>>>>>>> 689d826819b40d2220e4ee56731b3491f56230fb
     const token = signToken({ userId: user.id, username: user.username, isAdmin: user.isAdmin });
     const { password: _, ...safeUser } = user;
 
@@ -154,6 +173,7 @@ router.post("/login", async (req, res) => {
     // FIX: сбрасываем счётчик попыток после успешного входа
     resetLoginRateLimit(rateLimitKey);
 
+<<<<<<< HEAD
     // 2FA: если включена — отправляем код в Telegram вместо токена
     if (user.twoFAEnabled && user.telegramId) {
       const code = Math.floor(100000 + Math.random() * 900000).toString(); // 6 цифр
@@ -172,6 +192,8 @@ router.post("/login", async (req, res) => {
       return;
     }
 
+=======
+>>>>>>> 689d826819b40d2220e4ee56731b3491f56230fb
     await db.update(users).set({ lastActive: Math.floor(Date.now() / 1000) }).where(eq(users.id, user.id));
 
     const token = signToken({ userId: user.id, username: user.username, isAdmin: user.isAdmin });
@@ -184,6 +206,7 @@ router.post("/login", async (req, res) => {
   }
 });
 
+<<<<<<< HEAD
 // Второй шаг логина при включённой 2FA
 // Frontend после получения { twoFARequired: true, userId } показывает форму ввода кода
 // и отправляет POST /auth/2fa/confirm { userId, code }
@@ -227,6 +250,8 @@ router.post("/2fa/confirm", async (req, res) => {
   }
 });
 
+=======
+>>>>>>> 689d826819b40d2220e4ee56731b3491f56230fb
 router.post("/telegram", async (req, res) => {
   try {
     const { initData } = req.body;

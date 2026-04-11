@@ -6,7 +6,10 @@ import { authMiddleware, optionalAuth } from "../lib/auth";
 import { logger } from "../lib/logger";
 import { normalizeRouteParam } from "../lib/params";
 import { generatePlaceholderImage } from "../lib/placeholder-image";
+<<<<<<< HEAD
 import { limits } from "../middlewares/rate-limit";
+=======
+>>>>>>> 689d826819b40d2220e4ee56731b3491f56230fb
 
 const router = Router();
 
@@ -207,7 +210,11 @@ router.get("/:id", optionalAuth, async (req, res) => {
   }
 });
 
+<<<<<<< HEAD
 router.post("/", authMiddleware, limits.createProduct, async (req, res) => {
+=======
+router.post("/", authMiddleware, async (req, res) => {
+>>>>>>> 689d826819b40d2220e4ee56731b3491f56230fb
   try {
     const userId = (req as any).userId;
     const { title, description, price, category, subcategory, images, deliveryType, deliveryData, game, server, tags } = req.body;
@@ -217,6 +224,7 @@ router.post("/", authMiddleware, limits.createProduct, async (req, res) => {
       return;
     }
 
+<<<<<<< HEAD
     // FIX: валидация входных данных
     const trimmedTitle = String(title).trim();
     const trimmedDesc = String(description).trim();
@@ -247,6 +255,17 @@ router.post("/", authMiddleware, limits.createProduct, async (req, res) => {
       title: trimmedTitle,
       description: trimmedDesc,
       price: parsedPrice.toFixed(2),
+=======
+    const finalImages: string[] = (images && images.length > 0)
+      ? images
+      : [generatePlaceholderImage({ title, category, subcategory, game })];
+
+    const [product] = await db.insert(products).values({
+      sellerId: userId,
+      title,
+      description,
+      price: price.toString(),
+>>>>>>> 689d826819b40d2220e4ee56731b3491f56230fb
       category,
       subcategory,
       images: finalImages,

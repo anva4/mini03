@@ -1,20 +1,30 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { deals, products, users, reviews, transactions } from "@workspace/db/schema";
+<<<<<<< HEAD
 import { eq, desc, and, or, sql, alias } from "drizzle-orm";
+=======
+import { eq, desc, and, or, sql } from "drizzle-orm";
+>>>>>>> 689d826819b40d2220e4ee56731b3491f56230fb
 import { authMiddleware } from "../lib/auth";
 import { normalizeRouteParam } from "../lib/params";
 import { notifyAdmin, notifyUser, notify } from "../lib/telegram";
 import { logger } from "../lib/logger";
+<<<<<<< HEAD
 import { limits } from "../middlewares/rate-limit";
+=======
+>>>>>>> 689d826819b40d2220e4ee56731b3491f56230fb
 
 const router = Router();
 const COMMISSION_RATE = 0.07;
 
+<<<<<<< HEAD
 // Алиасы для двойного JOIN на таблицу users (покупатель + продавец)
 const buyers = alias(users, "buyers");
 const sellers = alias(users, "sellers");
 
+=======
+>>>>>>> 689d826819b40d2220e4ee56731b3491f56230fb
 // FIX: используем PostgreSQL SEQUENCE для гарантированно уникальных номеров сделок
 // Вместо MAX+1 (race condition при параллельных запросах)
 async function getNextDealNumber(): Promise<number> {
@@ -40,7 +50,10 @@ router.get("/", authMiddleware, async (req, res) => {
     else if (role === "seller") where = eq(deals.sellerId, userId);
     else where = or(eq(deals.buyerId, userId), eq(deals.sellerId, userId));
 
+<<<<<<< HEAD
     // FIX: один запрос с двойным JOIN вместо N+1 (по одному SELECT на каждую сделку)
+=======
+>>>>>>> 689d826819b40d2220e4ee56731b3491f56230fb
     const dealsList = await db
       .select({
         id: deals.id,
@@ -55,6 +68,7 @@ router.get("/", authMiddleware, async (req, res) => {
         createdAt: deals.createdAt,
         productTitle: products.title,
         productImages: products.images,
+<<<<<<< HEAD
         buyerUsername: buyers.username,
         sellerUsername: sellers.username,
       })
@@ -62,11 +76,19 @@ router.get("/", authMiddleware, async (req, res) => {
       .leftJoin(products, eq(deals.productId, products.id))
       .leftJoin(buyers, eq(deals.buyerId, buyers.id))
       .leftJoin(sellers, eq(deals.sellerId, sellers.id))
+=======
+        buyerUsername: users.username,
+      })
+      .from(deals)
+      .leftJoin(products, eq(deals.productId, products.id))
+      .leftJoin(users, eq(deals.buyerId, users.id))
+>>>>>>> 689d826819b40d2220e4ee56731b3491f56230fb
       .where(where)
       .orderBy(desc(deals.createdAt))
       .limit(limitNum)
       .offset(offset);
 
+<<<<<<< HEAD
     const enriched = dealsList.map((deal) => ({
       id: deal.id,
       dealNumber: deal.dealNumber,
@@ -82,6 +104,32 @@ router.get("/", authMiddleware, async (req, res) => {
       buyer: { username: deal.buyerUsername },
       seller: { username: deal.sellerUsername },
     }));
+=======
+    const enriched = await Promise.all(
+      dealsList.map(async (deal) => {
+        const [seller] = await db
+          .select({ username: users.username })
+          .from(users)
+          .where(eq(users.id, deal.sellerId))
+          .limit(1);
+        return {
+          id: deal.id,
+          dealNumber: deal.dealNumber,
+          buyerId: deal.buyerId,
+          sellerId: deal.sellerId,
+          productId: deal.productId,
+          amount: deal.amount,
+          sellerAmount: deal.sellerAmount,
+          commission: deal.commission,
+          status: deal.status,
+          createdAt: deal.createdAt,
+          product: { title: deal.productTitle, images: deal.productImages },
+          buyer: { username: deal.buyerUsername },
+          seller: { username: seller?.username },
+        };
+      })
+    );
+>>>>>>> 689d826819b40d2220e4ee56731b3491f56230fb
 
     const [{ count }] = await db.select({ count: sql<number>`count(*)::int` }).from(deals).where(where);
 
@@ -92,7 +140,11 @@ router.get("/", authMiddleware, async (req, res) => {
   }
 });
 
+<<<<<<< HEAD
 router.post("/", authMiddleware, limits.createDeal, async (req, res) => {
+=======
+router.post("/", authMiddleware, async (req, res) => {
+>>>>>>> 689d826819b40d2220e4ee56731b3491f56230fb
   try {
     const buyerId = (req as any).userId;
     const { productId } = req.body;
@@ -156,6 +208,7 @@ router.post("/", authMiddleware, limits.createDeal, async (req, res) => {
       deal.status = "delivered";
     }
 
+<<<<<<< HEAD
     // FIX БАГ #1: объявляем buyerInfo ДО использования (было после notifyAdmin)
     // Объединяем в один параллельный запрос для скорости
     const [[buyerUser], [sellerUser]] = await Promise.all([
@@ -167,6 +220,17 @@ router.post("/", authMiddleware, limits.createDeal, async (req, res) => {
 
     await notifyUser(buyerUser?.telegramId, notify.dealCreatedBuyer(dealNumber, product.title, price.toFixed(2)));
     await notifyUser(sellerUser?.telegramId, notify.dealCreatedSeller(dealNumber, product.title, price.toFixed(2), buyerUser?.username || "?"));
+=======
+    await notifyAdmin(`🛒 Новая сделка #${dealNumber}: ${product.title} — ${price} ₽ | Покупатель: ${buyerInfo?.username || buyerId}`);
+
+    // Уведомляем покупателя и продавца
+    const [buyerUser] = await db.select({ telegramId: users.telegramId }).from(users).where(eq(users.id, buyerId)).limit(1);
+    const [sellerUser] = await db.select({ telegramId: users.telegramId, username: users.username }).from(users).where(eq(users.id, product.sellerId)).limit(1);
+    const [buyerInfo] = await db.select({ username: users.username }).from(users).where(eq(users.id, buyerId)).limit(1);
+
+    await notifyUser(buyerUser?.telegramId, notify.dealCreatedBuyer(dealNumber, product.title, price.toFixed(2)));
+    await notifyUser(sellerUser?.telegramId, notify.dealCreatedSeller(dealNumber, product.title, price.toFixed(2), buyerInfo?.username || "?"));
+>>>>>>> 689d826819b40d2220e4ee56731b3491f56230fb
 
     res.json(deal);
   } catch (err) {

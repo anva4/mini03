@@ -15,10 +15,13 @@ app.use((_req, res, next) => {
   res.setHeader("X-Frame-Options", "SAMEORIGIN");
   res.setHeader("X-XSS-Protection", "1; mode=block");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+<<<<<<< HEAD
   // HSTS: заставляем браузеры всегда использовать HTTPS (только в production)
   if (process.env.NODE_ENV === "production") {
     res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
   }
+=======
+>>>>>>> 689d826819b40d2220e4ee56731b3491f56230fb
   next();
 });
 
@@ -43,6 +46,7 @@ app.use(
 );
 
 const allowedOrigins = process.env.ALLOWED_ORIGINS
+<<<<<<< HEAD
   ? process.env.ALLOWED_ORIGINS.split(",").map((o) => o.trim())
   : [];
 
@@ -61,6 +65,17 @@ const corsOrigin = allowedOrigins.length === 0
     };
 
 app.use(cors({ origin: corsOrigin, credentials: true }));
+=======
+  ? process.env.ALLOWED_ORIGINS.split(",")
+  : ["*"];
+
+app.use(
+  cors({
+    origin: allowedOrigins[0] === "*" ? true : allowedOrigins,
+    credentials: true,
+  }),
+);
+>>>>>>> 689d826819b40d2220e4ee56731b3491f56230fb
 
 // Увеличен лимит для base64 изображений (до 20mb)
 app.use(express.json({ limit: "20mb" }));

@@ -1,0 +1,14 @@
+[build]
+builder = "nixpacks"
+installCommand = "pnpm install --no-frozen-lockfile"
+buildCommand = "pnpm -r --filter !@workspace/mockup-sandbox --if-present run build && cp -r artifacts/minions-market/dist artifacts/api-server/public"
+
+[build.nixpacksPlan.phases.setup]
+nixPkgs = ["nodejs_22", "nodePackages.pnpm"]
+
+[deploy]
+startCommand = "pnpm --filter @workspace/api-server start"
+healthcheckPath = "/api/health"
+healthcheckTimeout = 300
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3

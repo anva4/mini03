@@ -369,6 +369,7 @@ router.post("/webhook/:gateway", async (req, res) => {
     let orderId: string | null = null;
     let status = "completed";
 
+<<<<<<< HEAD
     // FIX БАГ #2: проверка подписи для каждого шлюза
     if (gateway === "rukassa") {
       // Rukassa подписывает HMAC-SHA256(shop_id + order_id + secret_key)
@@ -389,10 +390,14 @@ router.post("/webhook/:gateway", async (req, res) => {
         res.status(400).json({ ok: false, message: "Missing signature" });
         return;
       }
+=======
+    if (gateway === "rukassa") {
+>>>>>>> 689d826819b40d2220e4ee56731b3491f56230fb
       orderId = body.order_id;
       if (body.status === "PAID") status = "completed";
       else { res.json({ ok: true }); return; }
     } else if (gateway === "nowpayments") {
+<<<<<<< HEAD
       // NowPayments подписывает HMAC-SHA512(sorted JSON body, ipn_secret)
       const secret = process.env.NOWPAYMENTS_IPN_SECRET;
       if (secret) {
@@ -407,12 +412,17 @@ router.post("/webhook/:gateway", async (req, res) => {
           return;
         }
       }
+=======
+>>>>>>> 689d826819b40d2220e4ee56731b3491f56230fb
       orderId = body.order_id;
       if (body.payment_status === "finished") status = "completed";
       else { res.json({ ok: true }); return; }
     } else if (gateway === "crystalpay") {
+<<<<<<< HEAD
       // CrystalPay не предоставляет webhook-подписи для депозитов —
       // безопасность обеспечивается тем, что orderId сверяется с БД и статус pending
+=======
+>>>>>>> 689d826819b40d2220e4ee56731b3491f56230fb
       orderId = body.extra;
       status = "completed";
     }

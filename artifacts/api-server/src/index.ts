@@ -4,7 +4,10 @@ import { seed } from "./seed";
 import { pool } from "@workspace/db";
 import { setupWebhook } from "./lib/bot";
 import { startPayoutPoller } from "./lib/payout-poller";
+<<<<<<< HEAD
 import { startDealAutoCompleteJob } from "./lib/deal-autocomplete";
+=======
+>>>>>>> 689d826819b40d2220e4ee56731b3491f56230fb
 
 const rawPort = process.env["PORT"] ?? "3000";
 const port = Number(rawPort);
@@ -220,7 +223,10 @@ async function start() {
   seed().catch((err) => logger.error(err, "Seed failed"));
   setupWebhook().catch((err) => logger.error(err, "Webhook setup failed"));
   startPayoutPoller();
+<<<<<<< HEAD
   startDealAutoCompleteJob();
+=======
+>>>>>>> 689d826819b40d2220e4ee56731b3491f56230fb
 }
 
 start().catch((err) => {
