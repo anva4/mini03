@@ -1,0 +1,170 @@
+import { Router } from "express";
+import { db } from "@workspace/db";
+import { messages, users } from "@workspace/db/schema";
+import { eq, desc, and, or, sql } from "drizzle-orm";
+import { authMiddleware } from "../lib/auth";
+import { normalizeRouteParam } from "../lib/params";
+import { logger } from "../lib/logger";
+import { limits } from "../middlewares/rate-limit";
+
+const router = Router();
+
+// FIX: максимальная длина одного сообщения
+const MAX_MESSAGE_LENGTH = 4000;
+
+router.get("/chats", authMiddleware, async (req, res) => {
+  try {
+    const userId = (req as any).userId;
+
+    const chatPartners = await db.execute(sql`
+      SELECT DISTINCT
+        CASE WHEN sender_id = ${userId} THEN receiver_id ELSE sender_id END as partner_id
+      FROM messages
+      WHERE sender_id = ${userId} OR receiver_id = ${userId}
+    `);
+
+    const partnerIds = (chatPartners.rows as any[]).map((r) => r.partner_id);
+    if (partnerIds.length === 0) {
+      res.json([]);
+      return;
+    }
+
+    const chats = await Promise.all(
+      partnerIds.map(async (partnerId: string) => {
+        const [partner] = await db
+          .select({ id: users.id, username: users.username, avatar: users.avatar })
+          .from(users)
+          .where(eq(users.id, partnerId))
+          .limit(1);
+
+        const [lastMsg] = await db
+          .select()
+          .from(messages)
+          .where(
+            or(
+              and(eq(messages.senderId, userId), eq(messages.receiverId, partnerId)),
+              and(eq(messages.senderId, partnerId), eq(messages.receiverId, userId))
+            )
+          )
+          .orderBy(desc(messages.createdAt))
+          .limit(1);
+
+        const [{ count }] = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(messages)
+          .where(
+            and(
+              eq(messages.senderId, partnerId),
+              eq(messages.receiverId, userId),
+              eq(messages.isRead, false)
+            )
+          );
+
+        return { userId: partnerId, user: partner, lastMessage: lastMsg, unreadCount: count };
+      })
+    );
+
+    chats.sort((a, b) => (b.lastMessage?.createdAt || 0) - (a.lastMessage?.createdAt || 0));
+    res.json(chats);
+  } catch (err) {
+    logger.error(err, "Ошибка загрузки чатов");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
+  }
+});
+
+router.get("/:userId", authMiddleware, async (req, res) => {
+  try {
+    const myId = (req as any).userId;
+    const partnerId = normalizeRouteParam(req.params.userId);
+    if (!partnerId) { res.status(400).json({ message: "Неверный ID пользователя" }); return; }
+
+    // FIX: cursor-based пагинация вместо жёсткого limit 100
+    // ?before=<createdAt> — грузить сообщения старше этой метки (для подгрузки истории)
+    // По умолчанию — последние 50 сообщений
+    const limitNum = Math.min(100, Math.max(1, parseInt((req.query.limit as string) || "50")));
+    const before = req.query.before ? parseInt(req.query.before as string) : null;
+
+    const conversation = or(
+      and(eq(messages.senderId, myId), eq(messages.receiverId, partnerId)),
+      and(eq(messages.senderId, partnerId), eq(messages.receiverId, myId))
+    );
+
+    const whereClause = before
+      ? and(conversation!, sql`${messages.createdAt} < ${before}`)
+      : conversation;
+
+    const msgs = await db
+      .select({
+        id: messages.id,
+        senderId: messages.senderId,
+        receiverId: messages.receiverId,
+        text: messages.text,
+        isRead: messages.isRead,
+        createdAt: messages.createdAt,
+        senderUsername: users.username,
+        senderAvatar: users.avatar,
+      })
+      .from(messages)
+      .leftJoin(users, eq(messages.senderId, users.id))
+      .where(whereClause)
+      .orderBy(desc(messages.createdAt))  // DESC для эффективной пагинации
+      .limit(limitNum);
+
+    // Разворачиваем обратно в хронологический порядок для отображения
+    msgs.reverse();
+
+    await db
+      .update(messages)
+      .set({ isRead: true })
+      .where(and(eq(messages.senderId, partnerId), eq(messages.receiverId, myId), eq(messages.isRead, false)));
+
+    const enriched = msgs.map((m) => ({
+      id: m.id,
+      senderId: m.senderId,
+      receiverId: m.receiverId,
+      text: m.text,
+      isRead: m.isRead,
+      createdAt: m.createdAt,
+      sender: { id: m.senderId, username: m.senderUsername, avatar: m.senderAvatar },
+    }));
+
+    res.json({
+      messages: enriched,
+      hasMore: msgs.length === limitNum,
+      // курсор для следующей страницы (самое раннее сообщение)
+      nextCursor: msgs.length > 0 ? msgs[0].createdAt : null,
+    });
+  } catch (err) {
+    logger.error(err, "Ошибка загрузки сообщений");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
+  }
+});
+
+router.post("/:userId", authMiddleware, limits.messages, async (req, res) => {
+  try {
+    const senderId = (req as any).userId;
+    const receiverId = normalizeRouteParam(req.params.userId);
+    const { text } = req.body;
+    if (!receiverId) { res.status(400).json({ message: "Неверный ID пользователя" }); return; }
+    if (!text?.trim()) { res.status(400).json({ message: "Нельзя отправить пустое сообщение" }); return; }
+
+    // FIX: ограничение длины сообщения
+    if (text.trim().length > MAX_MESSAGE_LENGTH) {
+      res.status(400).json({ message: `Message too long (max ${MAX_MESSAGE_LENGTH} characters)` });
+      return;
+    }
+
+    if (senderId === receiverId) { res.status(400).json({ message: "Нельзя написать сообщение самому себе" }); return; }
+
+    const [receiver] = await db.select({ id: users.id }).from(users).where(eq(users.id, receiverId)).limit(1);
+    if (!receiver) { res.status(404).json({ message: "Пользователь не найден" }); return; }
+
+    const [msg] = await db.insert(messages).values({ senderId, receiverId, text: text.trim() }).returning();
+    res.json(msg);
+  } catch (err) {
+    logger.error(err, "Ошибка отправки сообщения");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
+  }
+});
+
+export default router;

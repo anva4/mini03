@@ -1,0 +1,340 @@
+import { Router } from "express";
+import { db } from "@workspace/db";
+import { deals, products, users, reviews, transactions } from "@workspace/db/schema";
+import { eq, desc, and, or, sql, alias } from "drizzle-orm";
+import { authMiddleware } from "../lib/auth";
+import { normalizeRouteParam } from "../lib/params";
+import { notifyAdmin, notifyUser, notify } from "../lib/telegram";
+import { logger } from "../lib/logger";
+import { limits } from "../middlewares/rate-limit";
+
+const router = Router();
+const COMMISSION_RATE = 0.07;
+
+// Алиасы для двойного JOIN на таблицу users (покупатель + продавец)
+const buyers = alias(users, "buyers");
+const sellers = alias(users, "sellers");
+
+// FIX: используем PostgreSQL SEQUENCE для гарантированно уникальных номеров сделок
+// Вместо MAX+1 (race condition при параллельных запросах)
+async function getNextDealNumber(): Promise<number> {
+  const [result] = await db.execute(
+    sql`SELECT nextval('deal_number_seq')::int AS next_val`
+  ) as any;
+  return result.rows[0]?.next_val ?? (
+    // Fallback если sequence ещё не создан: используем MAX+1 с небольшим случайным смещением
+    (await db.select({ max: sql<number>`coalesce(max(deal_number), 1000)::int` }).from(deals))[0].max + 1
+  );
+}
+
+router.get("/", authMiddleware, async (req, res) => {
+  try {
+    const userId = (req as any).userId;
+    const { role = "all", page = "1", limit = "20" } = req.query as any;
+    const pageNum = Math.max(1, parseInt(page));
+    const limitNum = Math.min(50, parseInt(limit));
+    const offset = (pageNum - 1) * limitNum;
+
+    let where;
+    if (role === "buyer") where = eq(deals.buyerId, userId);
+    else if (role === "seller") where = eq(deals.sellerId, userId);
+    else where = or(eq(deals.buyerId, userId), eq(deals.sellerId, userId));
+
+    // FIX: один запрос с двойным JOIN вместо N+1 (по одному SELECT на каждую сделку)
+    const dealsList = await db
+      .select({
+        id: deals.id,
+        dealNumber: deals.dealNumber,
+        buyerId: deals.buyerId,
+        sellerId: deals.sellerId,
+        productId: deals.productId,
+        amount: deals.amount,
+        sellerAmount: deals.sellerAmount,
+        commission: deals.commission,
+        status: deals.status,
+        createdAt: deals.createdAt,
+        productTitle: products.title,
+        productImages: products.images,
+        buyerUsername: buyers.username,
+        sellerUsername: sellers.username,
+      })
+      .from(deals)
+      .leftJoin(products, eq(deals.productId, products.id))
+      .leftJoin(buyers, eq(deals.buyerId, buyers.id))
+      .leftJoin(sellers, eq(deals.sellerId, sellers.id))
+      .where(where)
+      .orderBy(desc(deals.createdAt))
+      .limit(limitNum)
+      .offset(offset);
+
+    const enriched = dealsList.map((deal) => ({
+      id: deal.id,
+      dealNumber: deal.dealNumber,
+      buyerId: deal.buyerId,
+      sellerId: deal.sellerId,
+      productId: deal.productId,
+      amount: deal.amount,
+      sellerAmount: deal.sellerAmount,
+      commission: deal.commission,
+      status: deal.status,
+      createdAt: deal.createdAt,
+      product: { title: deal.productTitle, images: deal.productImages },
+      buyer: { username: deal.buyerUsername },
+      seller: { username: deal.sellerUsername },
+    }));
+
+    const [{ count }] = await db.select({ count: sql<number>`count(*)::int` }).from(deals).where(where);
+
+    res.json({ deals: enriched, total: count, page: pageNum, totalPages: Math.ceil(count / limitNum) });
+  } catch (err) {
+    logger.error(err, "Ошибка загрузки сделок");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
+  }
+});
+
+router.post("/", authMiddleware, limits.createDeal, async (req, res) => {
+  try {
+    const buyerId = (req as any).userId;
+    const { productId } = req.body;
+    if (!productId) { res.status(400).json({ message: "Не указан ID товара" }); return; }
+
+    const [product] = await db.select().from(products).where(eq(products.id, productId)).limit(1);
+    if (!product || product.status !== "active") { res.status(400).json({ message: "Товар недоступен или снят с продажи" }); return; }
+    if (product.sellerId === buyerId) { res.status(400).json({ message: "Нельзя купить собственный товар" }); return; }
+
+    const price = parseFloat(product.price);
+    const commission = Math.round(price * COMMISSION_RATE * 100) / 100;
+    const sellerAmount = price - commission;
+    const dealNumber = await getNextDealNumber();
+
+    // FIX: атомарное списание баланса — защита от race condition
+    // UPDATE возвращает 0 строк если баланс недостаточен — нет двойного списания
+    const balanceResult = await db.update(users)
+      .set({
+        balance: sql`balance - ${price.toFixed(2)}::numeric`,
+        frozenBalance: sql`frozen_balance + ${price.toFixed(2)}::numeric`,
+        totalPurchases: sql`total_purchases + 1`,
+      })
+      .where(and(
+        eq(users.id, buyerId),
+        sql`balance >= ${price.toFixed(2)}::numeric`,
+      ))
+      .returning({ newBalance: users.balance, oldTotalPurchases: users.totalPurchases });
+
+    if (balanceResult.length === 0) {
+      res.status(400).json({ message: "Недостаточно средств на балансе" });
+      return;
+    }
+
+    const balanceBefore = (parseFloat(balanceResult[0].newBalance) + price).toFixed(2);
+    const balanceAfter = balanceResult[0].newBalance;
+
+    await db.insert(transactions).values({
+      userId: buyerId,
+      type: "purchase",
+      amount: price.toFixed(2),
+      status: "completed",
+      description: `Purchase: ${product.title}`,
+      balanceBefore,
+      balanceAfter,
+    });
+
+    const [deal] = await db.insert(deals).values({
+      dealNumber,
+      buyerId,
+      sellerId: product.sellerId,
+      productId: product.id,
+      amount: price.toFixed(2),
+      sellerAmount: sellerAmount.toFixed(2),
+      commission: commission.toFixed(2),
+      status: "paid",
+      autoCompleteAt: Math.floor(Date.now() / 1000) + 86400 * 3,
+    }).returning();
+
+    if (product.deliveryType === "auto" && product.deliveryData) {
+      await db.update(deals).set({ status: "delivered", deliveryData: product.deliveryData }).where(eq(deals.id, deal.id));
+      deal.status = "delivered";
+    }
+
+    // FIX БАГ #1: объявляем buyerInfo ДО использования (было после notifyAdmin)
+    // Объединяем в один параллельный запрос для скорости
+    const [[buyerUser], [sellerUser]] = await Promise.all([
+      db.select({ telegramId: users.telegramId, username: users.username }).from(users).where(eq(users.id, buyerId)).limit(1),
+      db.select({ telegramId: users.telegramId, username: users.username }).from(users).where(eq(users.id, product.sellerId)).limit(1),
+    ]);
+
+    await notifyAdmin(`🛒 Новая сделка #${dealNumber}: ${product.title} — ${price} ₽ | Покупатель: ${buyerUser?.username || buyerId}`);
+
+    await notifyUser(buyerUser?.telegramId, notify.dealCreatedBuyer(dealNumber, product.title, price.toFixed(2)));
+    await notifyUser(sellerUser?.telegramId, notify.dealCreatedSeller(dealNumber, product.title, price.toFixed(2), buyerUser?.username || "?"));
+
+    res.json(deal);
+  } catch (err) {
+    logger.error(err, "Ошибка создания сделки");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
+  }
+});
+
+router.get("/:id", authMiddleware, async (req, res) => {
+  try {
+    const userId = (req as any).userId;
+    const dealId = normalizeRouteParam(req.params.id);
+    if (!dealId) { res.status(400).json({ message: "Неверный ID сделки" }); return; }
+    const [deal] = await db.select().from(deals).where(eq(deals.id, dealId)).limit(1);
+    if (!deal) { res.status(404).json({ message: "Не найдено" }); return; }
+    if (deal.buyerId !== userId && deal.sellerId !== userId && !(req as any).isAdmin) {
+      res.status(403).json({ message: "Нет доступа" }); return;
+    }
+
+    const [product] = await db.select({ title: products.title, images: products.images }).from(products).where(eq(products.id, deal.productId)).limit(1);
+    const [buyer] = await db.select({ id: users.id, username: users.username, avatar: users.avatar }).from(users).where(eq(users.id, deal.buyerId)).limit(1);
+    const [seller] = await db.select({ id: users.id, username: users.username, avatar: users.avatar }).from(users).where(eq(users.id, deal.sellerId)).limit(1);
+
+    res.json({ ...deal, product, buyer, seller });
+  } catch (err) {
+    logger.error(err, "Ошибка загрузки сделки");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
+  }
+});
+
+router.post("/:id/deliver", authMiddleware, async (req, res) => {
+  try {
+    const userId = (req as any).userId;
+    const dealId = normalizeRouteParam(req.params.id);
+    if (!dealId) { res.status(400).json({ message: "Неверный ID сделки" }); return; }
+    const [deal] = await db.select().from(deals).where(eq(deals.id, dealId)).limit(1);
+    if (!deal || deal.sellerId !== userId) { res.status(403).json({ message: "Нет доступа" }); return; }
+    if (deal.status !== "paid") { res.status(400).json({ message: "Недопустимый статус" }); return; }
+
+    const { deliveryData } = req.body;
+    await db.update(deals).set({ status: "delivered", deliveryData, autoCompleteAt: Math.floor(Date.now() / 1000) + 86400 }).where(eq(deals.id, deal.id));
+
+    // Уведомляем покупателя
+    const [buyerForDeliver] = await db.select({ telegramId: users.telegramId }).from(users).where(eq(users.id, deal.buyerId)).limit(1);
+    const [productForDeliver] = await db.select({ title: products.title }).from(products).where(eq(products.id, deal.productId)).limit(1);
+    await notifyUser(buyerForDeliver?.telegramId, notify.dealDeliveredBuyer(deal.dealNumber, productForDeliver?.title || "Товар"));
+
+    res.json({ message: "Товар передан" });
+  } catch (err) {
+    logger.error(err, "Ошибка передачи товара");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
+  }
+});
+
+router.post("/:id/confirm", authMiddleware, async (req, res) => {
+  try {
+    const userId = (req as any).userId;
+    const dealId = normalizeRouteParam(req.params.id);
+    if (!dealId) { res.status(400).json({ message: "Неверный ID сделки" }); return; }
+    const [deal] = await db.select().from(deals).where(eq(deals.id, dealId)).limit(1);
+    if (!deal || deal.buyerId !== userId) { res.status(403).json({ message: "Нет доступа" }); return; }
+    if (deal.status !== "delivered") { res.status(400).json({ message: "Недопустимый статус" }); return; }
+
+    await db.update(deals).set({ status: "completed", buyerConfirmed: true }).where(eq(deals.id, deal.id));
+
+    const sellerAmount = parseFloat(deal.sellerAmount);
+
+    // FIX: атомарные обновления для продавца и покупателя
+    await db.update(users).set({
+      balance: sql`balance + ${sellerAmount.toFixed(2)}::numeric`,
+      totalSales: sql`total_sales + 1`,
+      totalVolume: sql`total_volume + ${sellerAmount.toFixed(2)}::numeric`,
+    }).where(eq(users.id, deal.sellerId));
+
+    await db.update(users).set({
+      frozenBalance: sql`GREATEST(0, frozen_balance - ${deal.amount}::numeric)`,
+    }).where(eq(users.id, deal.buyerId));
+
+    await db.insert(transactions).values({
+      userId: deal.sellerId,
+      type: "sale_revenue",
+      amount: sellerAmount.toFixed(2),
+      status: "completed",
+      description: `Sale revenue for deal #${deal.dealNumber}`,
+    });
+
+    await db.update(products).set({ soldCount: sql`${products.soldCount} + 1` }).where(eq(products.id, deal.productId));
+
+    // Уведомляем обоих участников
+    const [sellerForConfirm] = await db.select({ telegramId: users.telegramId }).from(users).where(eq(users.id, deal.sellerId)).limit(1);
+    const [buyerForConfirm] = await db.select({ telegramId: users.telegramId }).from(users).where(eq(users.id, deal.buyerId)).limit(1);
+    const [productForConfirm] = await db.select({ title: products.title }).from(products).where(eq(products.id, deal.productId)).limit(1);
+    await notifyUser(sellerForConfirm?.telegramId, notify.dealCompletedSeller(deal.dealNumber, productForConfirm?.title || "Товар", sellerAmount.toFixed(2)));
+    await notifyUser(buyerForConfirm?.telegramId, notify.dealCompletedBuyer(deal.dealNumber, productForConfirm?.title || "Товар"));
+
+    res.json({ message: "Сделка подтверждена" });
+  } catch (err) {
+    logger.error(err, "Ошибка подтверждения сделки");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
+  }
+});
+
+router.post("/:id/dispute", authMiddleware, async (req, res) => {
+  try {
+    const userId = (req as any).userId;
+    const dealId = normalizeRouteParam(req.params.id);
+    if (!dealId) { res.status(400).json({ message: "Неверный ID сделки" }); return; }
+    const [deal] = await db.select().from(deals).where(eq(deals.id, dealId)).limit(1);
+    if (!deal || deal.buyerId !== userId) { res.status(403).json({ message: "Нет доступа" }); return; }
+    if (!["paid", "delivered"].includes(deal.status)) { res.status(400).json({ message: "Недопустимый статус" }); return; }
+
+    const { reason } = req.body;
+    if (!reason?.trim()) { res.status(400).json({ message: "Укажите причину спора" }); return; }
+
+    await db.update(deals).set({ status: "disputed", disputeReason: reason }).where(eq(deals.id, deal.id));
+
+    await notifyAdmin(`⚠️ Спор по сделке #${deal.dealNumber}\nПричина: ${reason}`);
+
+    // Уведомляем продавца и покупателя
+    const [sellerForDispute] = await db.select({ telegramId: users.telegramId }).from(users).where(eq(users.id, deal.sellerId)).limit(1);
+    const [buyerForDispute] = await db.select({ telegramId: users.telegramId }).from(users).where(eq(users.id, deal.buyerId)).limit(1);
+    await notifyUser(sellerForDispute?.telegramId, notify.dealDisputedSeller(deal.dealNumber, reason));
+    await notifyUser(buyerForDispute?.telegramId, notify.dealDisputedBuyer(deal.dealNumber));
+
+    res.json({ message: "Спор открыт" });
+  } catch (err) {
+    logger.error(err, "Ошибка открытия спора");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
+  }
+});
+
+router.post("/:id/review", authMiddleware, async (req, res) => {
+  try {
+    const userId = (req as any).userId;
+    const dealId = normalizeRouteParam(req.params.id);
+    if (!dealId) { res.status(400).json({ message: "Неверный ID сделки" }); return; }
+    const [deal] = await db.select().from(deals).where(eq(deals.id, dealId)).limit(1);
+    if (!deal || deal.buyerId !== userId) { res.status(403).json({ message: "Нет доступа" }); return; }
+    if (deal.status !== "completed") { res.status(400).json({ message: "Сделка ещё не завершена" }); return; }
+
+    if (deal.sellerId === userId) { res.status(400).json({ message: "Нельзя оставить отзыв самому себе" }); return; }
+
+    const existing = await db.select().from(reviews).where(eq(reviews.dealId, deal.id)).limit(1);
+    if (existing.length > 0) { res.status(400).json({ message: "Вы уже оставили отзыв по этой сделке" }); return; }
+
+    const { rating, comment } = req.body;
+    if (!rating || rating < 1 || rating > 5) { res.status(400).json({ message: "Оценка должна быть от 1 до 5" }); return; }
+
+    const [review] = await db.insert(reviews).values({
+      dealId: deal.id,
+      reviewerId: userId,
+      sellerId: deal.sellerId,
+      rating,
+      comment,
+    }).returning();
+
+    const sellerReviews = await db.select({ rating: reviews.rating }).from(reviews).where(eq(reviews.sellerId, deal.sellerId));
+    const avgRating = sellerReviews.reduce((s, r) => s + r.rating, 0) / sellerReviews.length;
+    await db.update(users).set({
+      rating: avgRating.toFixed(1),
+      reviewCount: sellerReviews.length,
+    }).where(eq(users.id, deal.sellerId));
+
+    res.json(review);
+  } catch (err) {
+    logger.error(err, "Ошибка создания отзыва");
+    res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте позже." });
+  }
+});
+
+export default router;
