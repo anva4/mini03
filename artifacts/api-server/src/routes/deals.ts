@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { deals, products, users, reviews, transactions } from "@workspace/db/schema";
-import { eq, desc, and, or, sql, alias } from "drizzle-orm";
+import { eq, desc, and, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { authMiddleware } from "../lib/auth";
 import { normalizeRouteParam } from "../lib/params";
 import { notifyAdmin, notifyUser, notify } from "../lib/telegram";
